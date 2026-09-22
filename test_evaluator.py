@@ -247,6 +247,7 @@ class DatasetAndModelTests(unittest.TestCase):
 
         self.assertEqual(result.status, "failed")
         self.assertIsNone(result.fitness)
+        self.assertEqual(result.semantic_warning, "")
         self.assertIn("ValueError: incompatible labels", result.failure_reason)
 
 

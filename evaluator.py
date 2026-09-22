@@ -87,7 +87,7 @@ def _semantic_warning(configuration: dict[str, Any], mode: str) -> str:
     return ""
 
 
-def _metadata(
+def _evaluation_metadata(
     data: DatasetBundle,
     experiment: ExperimentConfig,
     seed_info: dict[str, Any] | None = None,
@@ -161,7 +161,7 @@ def evaluate_candidate(
             training_time_seconds=time.perf_counter() - started,
             effective_learning_rate=effective_learning_rate,
             semantic_warning=warning,
-            metadata=_metadata(data, experiment, seed_info, seed),
+            metadata=_evaluation_metadata(data, experiment, seed_info, seed),
         )
     except Exception as error:  # A failed candidate must not stop the colony.
         return EvaluationResult(
@@ -173,8 +173,7 @@ def evaluate_candidate(
             best_epoch=None,
             training_time_seconds=time.perf_counter() - started,
             failure_reason=f"{type(error).__name__}: {error}",
-            metadata=_metadata(data, experiment, seed_info, seed),
-            semantic_warning=warning,
+            metadata=_evaluation_metadata(data, experiment, seed_info, seed),
         )
 
 

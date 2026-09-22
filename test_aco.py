@@ -11,6 +11,7 @@ from ACO import synthetic_evaluator
 from aco_optimizer import ACOOptimizer
 from config import (
     ExperimentConfig,
+    LOG_HYPERPARAMETERS,
     budget_values,
     get_search_space,
     mode_interpretation,
@@ -78,6 +79,28 @@ class ACOTest(unittest.TestCase):
         for index, count in enumerate(optimizer.option_counts):
             self.assertTrue(np.isclose(probabilities[index, :count].sum(), 1.0))
             self.assertTrue(np.all(probabilities[index, :count] > 0.0))
+
+    def test_improved_search_space_has_exactly_5184_configurations_and_no_loss_dimension(self) -> None:
+        config = ExperimentConfig(mode="improved", ants=1, iterations=1, max_epochs=1)
+
+        self.assertEqual(
+            5184,
+            np.prod([len(options) for options in config.search_space.values()]),
+        )
+        self.assertNotIn("loss", config.search_space)
+        self.assertEqual(config.rho, 0.25)
+        self.assertEqual(config.q, 1.0)
+
+    def test_improved_mode_requires_fixed_rho_and_q(self) -> None:
+        with self.assertRaisesRegex(ValueError, "requires rho=0.25"):
+            ExperimentConfig(mode="improved", rho=0.2)
+        with self.assertRaisesRegex(ValueError, "requires q=1.0"):
+            ExperimentConfig(mode="improved", q=2.0)
+        with self.assertRaisesRegex(ValueError, "does not sample loss"):
+            ExperimentConfig(
+                mode="improved",
+                search_space={"choice": ["a"], "loss": ["unexpected"]},
+            )
 
 
     def test_synthetic_smoke_all_modes(self) -> None:
@@ -303,6 +326,134 @@ class ACOTest(unittest.TestCase):
 
         probabilities = [row["selection_probabilities"] for row in optimizer.trial_rows]
         self.assertEqual(probabilities[0], probabilities[1])
+
+    def test_improved_log_keeps_fixed_loss_and_paper_mode_schema(self) -> None:
+        improved = ACOOptimizer(
+            ExperimentConfig(
+                mode="improved",
+                ants=1,
+                iterations=1,
+                max_epochs=1,
+                search_space={"choice": ["only"]},
+            ),
+            synthetic_evaluator,
+        )
+        paper = ACOOptimizer(
+            ExperimentConfig(
+                mode="paper_conventional",
+                ants=1,
+                iterations=1,
+                max_epochs=1,
+                search_space={"choice": ["only"]},
+            ),
+            synthetic_evaluator,
+        )
+
+        improved.run()
+        paper.run()
+
+        self.assertEqual(
+            improved.trial_rows[0]["loss"], "sparse_categorical_crossentropy"
+        )
+        self.assertEqual(improved.trial_rows[0].keys(), paper.trial_rows[0].keys())
+        self.assertEqual(
+            [improved.trial_rows[0][name] for name in LOG_HYPERPARAMETERS],
+            [paper.trial_rows[0][name] for name in LOG_HYPERPARAMETERS],
+        )
+
+    def test_improved_reinforces_only_iteration_best_by_validation_accuracy(self) -> None:
+        def scored_evaluator(configuration: dict[str, object], experiment: ExperimentConfig) -> EvaluationResult:
+            fitness = 0.9 if configuration["choice"] == "b" else 0.4
+            return EvaluationResult(
+                status="success",
+                fitness=fitness,
+                train_accuracy=fitness,
+                validation_accuracy=fitness,
+                validation_loss=1.0 - fitness,
+                best_epoch=1,
+                training_time_seconds=0.1,
+            )
+
+        optimizer = ACOOptimizer(
+            ExperimentConfig(
+                mode="improved",
+                ants=2,
+                iterations=1,
+                max_epochs=1,
+                run_seed=42,
+                search_space={"choice": ["a", "b"]},
+            ),
+            scored_evaluator,
+        )
+
+        best = optimizer.run()
+
+        self.assertEqual(best.configuration["choice"], "b")
+        self.assertAlmostEqual(float(optimizer.pheromone[0, 0]), 0.75)
+        self.assertAlmostEqual(float(optimizer.pheromone[0, 1]), 1.65)
+        self.assertEqual(
+            sum(row["is_iteration_best"] for row in optimizer.trial_rows),
+            1,
+        )
+
+    def test_improved_reinforcement_uses_validation_accuracy_explicitly(self) -> None:
+        def evaluator(configuration: dict[str, object], experiment: ExperimentConfig) -> EvaluationResult:
+            validation_accuracy = 0.6 if configuration["choice"] == "b" else 0.4
+            fitness = 0.99 if configuration["choice"] == "b" else 0.01
+            return EvaluationResult(
+                status="success",
+                fitness=fitness,
+                train_accuracy=fitness,
+                validation_accuracy=validation_accuracy,
+                validation_loss=1.0 - validation_accuracy,
+                best_epoch=1,
+                training_time_seconds=0.1,
+            )
+
+        optimizer = ACOOptimizer(
+            ExperimentConfig(
+                mode="improved",
+                ants=2,
+                iterations=1,
+                max_epochs=1,
+                run_seed=42,
+                search_space={"choice": ["a", "b"]},
+            ),
+            evaluator,
+        )
+
+        optimizer.run()
+
+        self.assertAlmostEqual(float(optimizer.pheromone[0, 1]), 1.35)
+
+    def test_failed_trial_with_accuracy_cannot_become_improved_best(self) -> None:
+        def failing_evaluator(configuration: dict[str, object], experiment: ExperimentConfig) -> EvaluationResult:
+            return EvaluationResult(
+                status="failed",
+                fitness=None,
+                train_accuracy=None,
+                validation_accuracy=0.99,
+                validation_loss=0.01,
+                best_epoch=None,
+                training_time_seconds=0.1,
+                failure_reason="synthetic failure",
+            )
+
+        optimizer = ACOOptimizer(
+            ExperimentConfig(
+                mode="improved",
+                ants=1,
+                iterations=1,
+                max_epochs=1,
+                search_space={"choice": ["only"]},
+            ),
+            failing_evaluator,
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "All candidate evaluations failed"):
+            optimizer.run()
+
+        self.assertEqual(optimizer.run_status, "failed")
 
     def test_linear_identifier_preserves_the_paper_label(self) -> None:
         self.assertEqual(paper_label("activation", "linear"), "linier")

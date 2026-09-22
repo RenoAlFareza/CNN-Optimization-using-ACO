@@ -10,7 +10,13 @@ from typing import Any, Callable
 
 import numpy as np
 
-from config import ExperimentConfig, family_for_mode, mode_interpretation, paper_label
+from config import (
+    LOG_HYPERPARAMETERS,
+    ExperimentConfig,
+    family_for_mode,
+    mode_interpretation,
+    paper_label,
+)
 from evaluation_contract import EvaluationResult, candidate_id, canonical_json
 
 
@@ -109,25 +115,32 @@ class ACOOptimizer:
             self.pheromone[parameter_index, option_index] += amount
         self._clamp()
 
-    @staticmethod
-    def _is_better(candidate: CandidateResult, incumbent: CandidateResult | None) -> bool:
+    def _objective_value(self, candidate: CandidateResult) -> float | None:
         if candidate.result.fitness is None:
-            return False
-        if incumbent is None or incumbent.result.fitness is None:
-            return True
-        candidate_key = (
-            -candidate.result.fitness,
-            candidate.result.validation_loss if candidate.result.validation_loss is not None else float("inf"),
+            return None
+        if self.config.mode == "improved":
+            return candidate.result.validation_accuracy
+        return candidate.result.fitness
+
+    def _candidate_sort_key(self, candidate: CandidateResult) -> tuple[float, float, float, int]:
+        objective = self._objective_value(candidate)
+        if objective is None:
+            raise ValueError("Cannot rank a candidate without an objective value")
+        return (
+            -objective,
+            candidate.result.validation_loss
+            if candidate.result.validation_loss is not None
+            else float("inf"),
             candidate.result.training_time_seconds,
             candidate.ant_id,
         )
-        incumbent_key = (
-            -incumbent.result.fitness,
-            incumbent.result.validation_loss if incumbent.result.validation_loss is not None else float("inf"),
-            incumbent.result.training_time_seconds,
-            incumbent.ant_id,
-        )
-        return candidate_key < incumbent_key
+
+    def _is_better(self, candidate: CandidateResult, incumbent: CandidateResult | None) -> bool:
+        if self._objective_value(candidate) is None:
+            return False
+        if incumbent is None or self._objective_value(incumbent) is None:
+            return True
+        return self._candidate_sort_key(candidate) < self._candidate_sort_key(incumbent)
 
     def _evaluate(
         self,
@@ -148,6 +161,16 @@ class ACOOptimizer:
             if self.config.cache_enabled and result.fitness is not None:
                 self.cache[cache_key] = replace(result)
 
+        logged_configuration = {
+            name: configuration.get(name)
+            for name in LOG_HYPERPARAMETERS
+        }
+        logged_configuration["loss"] = (
+            "sparse_categorical_crossentropy"
+            if self.config.mode == "improved"
+            else configuration.get("loss", "sparse_categorical_crossentropy")
+        )
+
         row = {
             "run_id": f"{self.config.mode}-seed-{self.config.run_seed}",
             "mode": self.config.mode,
@@ -161,7 +184,7 @@ class ACOOptimizer:
             "iteration": iteration,
             "ant_id": ant_id,
             "candidate_id": key,
-            **configuration,
+            **logged_configuration,
             "fitness": result.fitness,
             "train_accuracy": result.train_accuracy,
             "validation_accuracy": result.validation_accuracy,
@@ -185,10 +208,11 @@ class ACOOptimizer:
             "is_iteration_best": False,
             "is_global_best": False,
         }
-        if self.config.mode in {"paper_literal", "paper_conventional"}:
-            row["paper_label_activation"] = paper_label(
-                "activation", configuration.get("activation", "")
-            )
+        row["paper_label_activation"] = (
+            paper_label("activation", configuration.get("activation", ""))
+            if self.config.mode in {"paper_literal", "paper_conventional"}
+            else ""
+        )
         self.trial_rows.append(row)
         return CandidateResult(configuration, result, key, ant_id)
 
@@ -232,13 +256,11 @@ class ACOOptimizer:
                             configuration, ant_id, iteration, probabilities
                         )
                     )
-                valid = [item for item in iteration_results if item.result.fitness is not None]
-                iteration_best = min(valid, key=lambda item: (
-                    -item.result.fitness,
-                    item.result.validation_loss if item.result.validation_loss is not None else float("inf"),
-                    item.result.training_time_seconds,
-                    item.ant_id,
-                )) if valid else None
+                valid = [
+                    item for item in iteration_results
+                    if self._objective_value(item) is not None
+                ]
+                iteration_best = min(valid, key=self._candidate_sort_key) if valid else None
                 self._evaporate()
                 if self.config.mode == "improved":
                     if iteration_best is not None:
@@ -248,21 +270,19 @@ class ACOOptimizer:
                         )
                         self._reinforce(
                             best_indices,
-                            self.config.q * float(iteration_best.result.fitness),
+                            self.config.q * float(iteration_best.result.validation_accuracy),
                         )
                 else:
                     for candidate, indices in zip(iteration_results, (item[1] for item in sampled)):
-                        if candidate.result.fitness is not None:
+                        if self._objective_value(candidate) is not None:
                             self._reinforce(indices, self.config.reinforcement)
                 self._record_pheromone(iteration, None, "after_update")
 
-            valid = [item for item in iteration_results if item.result.fitness is not None]
-            iteration_best = min(valid, key=lambda item: (
-                -item.result.fitness,
-                item.result.validation_loss if item.result.validation_loss is not None else float("inf"),
-                item.result.training_time_seconds,
-                item.ant_id,
-            )) if valid else None
+            valid = [
+                item for item in iteration_results
+                if self._objective_value(item) is not None
+            ]
+            iteration_best = min(valid, key=self._candidate_sort_key) if valid else None
             if iteration_best is not None:
                 for row in self.trial_rows[-len(iteration_results):]:
                     row["is_iteration_best"] = row["candidate_id"] == iteration_best.candidate_id

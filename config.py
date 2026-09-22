@@ -68,6 +68,18 @@ MODE_INTERPRETATIONS = {
     "improved": "project_improvement",
 }
 
+LOG_HYPERPARAMETERS = (
+    "dense_units_1",
+    "dense_units_2",
+    "dropout_1",
+    "dropout_2",
+    "batch_size",
+    "activation",
+    "optimizer",
+    "loss",
+    "learning_rate",
+)
+
 
 @dataclass(frozen=True)
 class ExperimentConfig:
@@ -99,6 +111,12 @@ class ExperimentConfig:
             raise ValueError("rho must be in [0, 1)")
         if self.mode in {"paper_literal", "paper_conventional"} and self.rho != 0.25:
             raise ValueError("paper-faithful modes require rho=0.25")
+        if self.mode == "improved" and self.rho != 0.25:
+            raise ValueError("improved mode requires rho=0.25")
+        if self.mode == "improved" and self.q != 1.0:
+            raise ValueError("improved mode requires q=1.0")
+        if self.mode == "improved" and "loss" in self.search_space:
+            raise ValueError("improved mode does not sample loss")
         if self.tau_0 <= 0 or self.tau_min <= 0:
             raise ValueError("tau_0 and tau_min must be positive")
         if not self.search_space:

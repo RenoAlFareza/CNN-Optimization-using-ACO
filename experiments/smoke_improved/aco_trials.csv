@@ -1,0 +1,5 @@
+run_id,mode,family,seed,iteration,ant_id,candidate_id,dense_units_1,dense_units_2,dropout_1,dropout_2,batch_size,activation,optimizer,learning_rate,fitness,train_accuracy,validation_accuracy,validation_loss,best_epoch,training_time_seconds,status,failure_reason,semantic_warning,effective_learning_rate,cache_hit,is_iteration_best,is_global_best
+improved-seed-42,improved,improved,42,1,1,1931391174cd6770,256,64,0.5,0.5,32,tanh,rmsprop,0.01,0.5,0.51,0.5,0.5,1,0.0,success,,,,False,False,False
+improved-seed-42,improved,improved,42,1,2,6dc865ffe827e81c,32,64,0.3,0.5,64,tanh,adam,0.0001,0.52,0.53,0.52,0.48,1,0.0,success,,,,False,True,False
+improved-seed-42,improved,improved,42,2,1,9e6b3f77c1997af6,64,32,0.5,0.5,128,relu,rmsprop,0.01,0.53,0.54,0.53,0.47,1,0.0,success,,,,False,True,True
+improved-seed-42,improved,improved,42,2,2,638e26ce66922f7f,128,32,0.3,0.1,32,tanh,rmsprop,0.01,0.51,0.52,0.51,0.49,1,0.0,success,,,,False,False,False

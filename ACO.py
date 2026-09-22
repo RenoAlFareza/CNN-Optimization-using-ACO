@@ -43,12 +43,52 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--cache", action="store_true")
     parser.add_argument("--synthetic", action="store_true", help="Test ACO without TensorFlow/MNIST.")
     parser.add_argument("--output-dir", default="experiments")
+    parser.add_argument(
+        "--primary",
+        action="store_true",
+        help="Run paper-conventional and improved modes across primary seeds.",
+    )
+    parser.add_argument("--seeds", nargs="+", type=int, default=[42, 43, 44])
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
     budget = budget_values(args.budget)
+
+    if args.primary:
+        from experiment_runner import run_primary_experiments
+
+        if args.budget != "main" or tuple(args.seeds) != (42, 43, 44):
+            raise ValueError("--primary requires main budget and seeds 42 43 44")
+        if any(value is not None for value in (args.ants, args.iterations, args.max_epochs)):
+            raise ValueError("--primary uses the fixed main budget without overrides")
+
+        if args.synthetic:
+            evaluator_factory = lambda _config: synthetic_evaluator
+        else:
+            from dataset import load_mnist
+            from evaluator import evaluate_candidate
+
+            data = load_mnist(2024)
+            evaluator_factory = lambda config: (
+                lambda candidate, _experiment: evaluate_candidate(candidate, config, data)
+            )
+
+        report = run_primary_experiments(
+            seeds=tuple(args.seeds),
+            budget=budget,
+            budget_name=args.budget,
+            evaluator_factory=evaluator_factory,
+            output_dir=args.output_dir,
+            cache_enabled=args.cache,
+            evaluator_type="synthetic" if args.synthetic else "cnn_mnist",
+        )
+        print(f"primary_modes={len(report.mode_results)} seeds={tuple(args.seeds)}")
+        print(f"test_evaluations={report.test_evaluations}")
+        print(f"report={report.output_path}")
+        return
+
     config = ExperimentConfig(
         mode=args.mode,
         ants=args.ants if args.ants is not None else budget["ants"],

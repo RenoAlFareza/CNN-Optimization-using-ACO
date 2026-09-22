@@ -47,6 +47,7 @@ class ACOOptimizer:
         self.pheromone_history: list[dict[str, Any]] = []
         self.trial_rows: list[dict[str, Any]] = []
         self.cache: dict[str, EvaluationResult] = {}
+        self.evaluation_results: dict[str, EvaluationResult] = {}
         self.rng = np.random.default_rng(config.run_seed)
         self.global_best: CandidateResult | None = None
         self.run_status = "pending"
@@ -157,7 +158,19 @@ class ACOOptimizer:
             cache_hit = True
             result = replace(result, status="cached")
         else:
-            result = self.evaluator(configuration, self.config)
+            try:
+                result = self.evaluator(configuration, self.config)
+            except Exception as error:
+                result = EvaluationResult(
+                    status="failed",
+                    fitness=None,
+                    train_accuracy=None,
+                    validation_accuracy=None,
+                    validation_loss=None,
+                    best_epoch=None,
+                    training_time_seconds=0.0,
+                    failure_reason=f"{type(error).__name__}: {error}",
+                )
             if self.config.cache_enabled and result.fitness is not None:
                 self.cache[cache_key] = replace(result)
 
@@ -214,6 +227,8 @@ class ACOOptimizer:
             else ""
         )
         self.trial_rows.append(row)
+        if result.fitness is not None:
+            self.evaluation_results[key] = replace(result)
         return CandidateResult(configuration, result, key, ant_id)
 
     def _cache_key(self, configuration: dict[str, Any]) -> str:

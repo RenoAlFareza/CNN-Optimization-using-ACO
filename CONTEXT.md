@@ -16,6 +16,7 @@ This project studies Ant Colony Optimization (ACO) for selecting CNN hyperparame
 - **Iteration**: one ACO cycle. Depending on the mode, ants are updated one at a time or all ants are updated together.
 - **Paper-faithful**: a mode intended to preserve the search space and constant pheromone reinforcement described by Purnomo et al. (2024), while explicitly recording details that the paper does not specify.
 - **Improved**: the development mode with an explicit validation protocol, a smaller search space, iteration-best reinforcement, and fitness-weighted pheromone reinforcement.
+- **Experiment family**: the report grouping that places `paper_literal` and `paper_conventional` under `paper-faithful`, and `improved` under `improved`.
 - **Trial**: one candidate evaluation, including a successful training, a failed training, or a cache hit.
 - **Final model**: a new CNN trained after ACO finishes, using the selected configuration and the training-development set, then evaluated once on the untouched test set.
 

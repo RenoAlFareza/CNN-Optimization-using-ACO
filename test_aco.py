@@ -455,6 +455,27 @@ class ACOTest(unittest.TestCase):
 
         self.assertEqual(optimizer.run_status, "failed")
 
+    def test_unexpected_evaluator_exception_becomes_failed_trial(self) -> None:
+        def raising_evaluator(configuration, experiment):
+            raise RuntimeError("unexpected evaluator error")
+
+        optimizer = ACOOptimizer(
+            ExperimentConfig(
+                mode="improved",
+                ants=1,
+                iterations=1,
+                max_epochs=1,
+                search_space={"choice": ["only"]},
+            ),
+            raising_evaluator,
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "All candidate evaluations failed"):
+            optimizer.run()
+
+        self.assertEqual(optimizer.trial_rows[0]["status"], "failed")
+        self.assertIn("unexpected evaluator error", optimizer.trial_rows[0]["failure_reason"])
+
     def test_linear_identifier_preserves_the_paper_label(self) -> None:
         self.assertEqual(paper_label("activation", "linear"), "linier")
         self.assertEqual(paper_label("activation", "relu"), "relu")

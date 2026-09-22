@@ -107,6 +107,8 @@ Diagnostic: 20 ants x 50 iterations x 10 max epochs, optional for paper-literal
 
 The primary comparison is `paper_conventional` versus `improved`. `paper_literal` is diagnostic unless resources permit a supplementary three-seed run.
 
+The repeated-run runner executes both primary modes for seeds 42, 43, and 44 using the main budget, then confirms every per-seed global-best candidate on every seed using validation results only. Its report records per-seed and aggregate runtime, failed trials, cache hits, effective budget, configuration metadata, and the explicit pipeline-comparison caveat. It does not accept a test evaluator; final test evaluation belongs to the final-retraining stage.
+
 After tuning, a new model is trained on all 60,000 training-development images for the selected `best_epoch` and evaluated once on the untouched test set. Test accuracy never selects a configuration.
 
 ## Interpretation caveat

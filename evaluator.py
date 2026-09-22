@@ -72,6 +72,52 @@ def _history_best(history: dict[str, list[float]]) -> tuple[int, float, float]:
     return best + 1, float(accuracies[best]), float(losses[best])
 
 
+def _training_accuracy(history: dict[str, list[float]], epoch: int) -> float:
+    accuracies = history.get("sparse_categorical_accuracy", history.get("accuracy", []))
+    if len(accuracies) < epoch:
+        raise ValueError("Training history did not contain training accuracy")
+    return float(accuracies[epoch - 1])
+
+
+def _semantic_warning(configuration: dict[str, Any], mode: str) -> str:
+    if mode in {"paper_literal", "paper_conventional"} and configuration.get(
+        "loss", "sparse_categorical_crossentropy"
+    ) != "sparse_categorical_crossentropy":
+        return "nonstandard_loss_for_multiclass_sparse_labels"
+    return ""
+
+
+def _metadata(
+    data: DatasetBundle,
+    experiment: ExperimentConfig,
+    seed_info: dict[str, Any] | None = None,
+    seed: int | None = None,
+) -> dict[str, Any]:
+    metadata: dict[str, Any] = environment_metadata()
+    metadata.update(
+        {
+            "dataset": "mnist",
+            "dataset_seed": experiment.dataset_seed,
+            "split_id": data.split_id,
+            "training_split_size": int(len(data.x_train)),
+            "validation_split_size": int(len(data.x_validation)),
+            "test_split_size": int(len(data.x_test)),
+            "input_shape": list(data.x_train.shape[1:]),
+            "run_seed": experiment.run_seed,
+            "trial_seed": seed,
+            "mode": experiment.mode,
+            "max_epochs": experiment.max_epochs,
+            "early_stopping_monitor": "val_sparse_categorical_accuracy",
+            "early_stopping_patience": experiment.early_stopping_patience,
+            "early_stopping_min_delta": 0.0,
+            "restore_best_weights": True,
+        }
+    )
+    if seed_info:
+        metadata.update(seed_info)
+    return metadata
+
+
 def evaluate_candidate(
     configuration: dict[str, Any],
     experiment: ExperimentConfig,
@@ -79,8 +125,10 @@ def evaluate_candidate(
 ) -> EvaluationResult:
     seed = trial_seed(experiment.run_seed, experiment.mode, configuration)
     started = time.perf_counter()
+    warning = _semantic_warning(configuration, experiment.mode)
+    seed_info: dict[str, Any] | None = None
     try:
-        seed_tensorflow(seed, experiment.deterministic)
+        seed_info = seed_tensorflow(seed, experiment.deterministic)
         model, effective_learning_rate = build_model(configuration, experiment.mode)
         import tensorflow as tf
 
@@ -102,13 +150,7 @@ def evaluate_candidate(
         )
         history_dict = {key: [float(value) for value in values] for key, values in history.history.items()}
         best_epoch, best_accuracy, best_loss = _history_best(history_dict)
-        train_accuracy = float(history_dict["sparse_categorical_accuracy"][best_epoch - 1])
-        warning = ""
-        if experiment.mode in {"paper_literal", "paper_conventional"} and configuration["loss"] not in {
-            "sparse_categorical_crossentropy",
-            "categorical_crossentropy",
-        }:
-            warning = "nonstandard_loss_for_multiclass_sparse_labels"
+        train_accuracy = _training_accuracy(history_dict, best_epoch)
         return EvaluationResult(
             status="success",
             fitness=best_accuracy,
@@ -119,7 +161,7 @@ def evaluate_candidate(
             training_time_seconds=time.perf_counter() - started,
             effective_learning_rate=effective_learning_rate,
             semantic_warning=warning,
-            metadata=environment_metadata(),
+            metadata=_metadata(data, experiment, seed_info, seed),
         )
     except Exception as error:  # A failed candidate must not stop the colony.
         return EvaluationResult(
@@ -131,7 +173,8 @@ def evaluate_candidate(
             best_epoch=None,
             training_time_seconds=time.perf_counter() - started,
             failure_reason=f"{type(error).__name__}: {error}",
-            metadata=environment_metadata(),
+            metadata=_metadata(data, experiment, seed_info, seed),
+            semantic_warning=warning,
         )
 
 

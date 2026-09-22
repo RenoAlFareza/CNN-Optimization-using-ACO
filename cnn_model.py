@@ -57,10 +57,22 @@ def build_model(configuration: dict[str, Any], mode: str):
         raise ValueError(f"Unsupported optimizer: {optimizer_name}") from error
     optimizer = optimizer_class(**optimizer_kwargs)
 
-    loss = configuration.get("loss", "sparse_categorical_crossentropy")
+    # Improved mode deliberately keeps the loss fixed; paper-faithful modes
+    # retain the paper's candidate losses so technically runnable but
+    # methodologically unusual trials can be recorded and warned about.
+    loss = (
+        "sparse_categorical_crossentropy"
+        if mode == "improved"
+        else configuration.get("loss", "sparse_categorical_crossentropy")
+    )
     model.compile(
         optimizer=optimizer,
         loss=loss,
         metrics=["sparse_categorical_accuracy"],
     )
-    return model, float(optimizer.learning_rate.numpy())
+    learning_rate = optimizer.learning_rate
+    try:
+        learning_rate = learning_rate.numpy()
+    except AttributeError:
+        pass
+    return model, float(learning_rate)

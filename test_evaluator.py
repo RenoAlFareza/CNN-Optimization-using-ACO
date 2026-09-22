@@ -199,6 +199,7 @@ class DatasetAndModelTests(unittest.TestCase):
         self.assertEqual(result.train_accuracy, 0.80)
         self.assertEqual(result.effective_learning_rate, 0.01)
         self.assertEqual(result.metadata["split_id"], "split-test")
+        self.assertEqual(result.metadata["mode_interpretation"], "project_improvement")
         self.assertEqual(result.metadata["determinism_effective"], True)
         self.assertEqual(model.fit_kwargs["callbacks"][0].kwargs, {
             "monitor": "val_sparse_categorical_accuracy",
@@ -227,6 +228,7 @@ class DatasetAndModelTests(unittest.TestCase):
 
         self.assertEqual(result.status, "success")
         self.assertEqual(result.semantic_warning, "nonstandard_loss_for_multiclass_sparse_labels")
+        self.assertIn("not_verified_original_code", result.metadata["mode_interpretation"])
 
     def test_fit_errors_fail_without_accuracy_zero(self) -> None:
         model = _FakeModel(fit_error=ValueError("incompatible labels"))

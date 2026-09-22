@@ -4,11 +4,11 @@
 
 **Blocked by:** 02: Generic ACO engine with logging and cache; 03: CNN-MNIST candidate evaluator
 
-**Status:** ready-for-agent
+**Status:** completed
 
-- [ ] Each ant samples from the current pheromone, is evaluated, triggers evaporation, and then reinforces its selected valid options by 0.5.
-- [ ] The next ant samples from pheromone after the previous ant's update.
-- [ ] Failed ants trigger the mode's evaporation lifecycle but do not receive reinforcement.
-- [ ] Pheromone history records before-sampling and after-update snapshots for each ant and update step.
-- [ ] The mode is selectable from the command line and supports smoke, pilot, and diagnostic budgets.
-- [ ] Documentation and metadata identify this as a literal pseudocode interpretation, not a verified reproduction of the authors' code.
+- [x] Each ant samples from the current pheromone, is evaluated, triggers evaporation, and then reinforces its selected valid options by 0.5.
+- [x] The next ant samples from pheromone after the previous ant's update.
+- [x] Failed ants trigger the mode's evaporation lifecycle but do not receive reinforcement.
+- [x] Pheromone history records before-sampling and after-update snapshots for each ant and update step.
+- [x] The mode is selectable from the command line and supports smoke, pilot, and diagnostic budgets.
+- [x] Documentation and metadata identify this as a literal pseudocode interpretation, not a verified reproduction of the authors' code.

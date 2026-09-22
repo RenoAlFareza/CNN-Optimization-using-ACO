@@ -10,7 +10,7 @@ from typing import Any, Callable
 
 import numpy as np
 
-from config import ExperimentConfig, family_for_mode, paper_label
+from config import ExperimentConfig, family_for_mode, mode_interpretation, paper_label
 from evaluation_contract import EvaluationResult, candidate_id, canonical_json
 
 
@@ -43,6 +43,7 @@ class ACOOptimizer:
         self.cache: dict[str, EvaluationResult] = {}
         self.rng = np.random.default_rng(config.run_seed)
         self.global_best: CandidateResult | None = None
+        self.run_status = "pending"
 
     def _probabilities(self) -> np.ndarray:
         probabilities = np.zeros_like(self.pheromone)
@@ -72,6 +73,11 @@ class ACOOptimizer:
                         "run_id": f"{self.config.mode}-seed-{self.config.run_seed}",
                         "mode": self.config.mode,
                         "family": family_for_mode(self.config.mode),
+                        "mode_interpretation": mode_interpretation(self.config.mode),
+                        "budget": self.config.budget_name,
+                        "effective_ants": self.config.ants,
+                        "effective_iterations": self.config.iterations,
+                        "effective_max_epochs": self.config.max_epochs,
                         "seed": self.config.run_seed,
                         "iteration": iteration,
                         "ant_id": "" if ant_id is None else ant_id,
@@ -146,6 +152,11 @@ class ACOOptimizer:
             "run_id": f"{self.config.mode}-seed-{self.config.run_seed}",
             "mode": self.config.mode,
             "family": family_for_mode(self.config.mode),
+            "mode_interpretation": mode_interpretation(self.config.mode),
+            "budget": self.config.budget_name,
+            "effective_ants": self.config.ants,
+            "effective_iterations": self.config.iterations,
+            "effective_max_epochs": self.config.max_epochs,
             "seed": self.config.run_seed,
             "iteration": iteration,
             "ant_id": ant_id,
@@ -261,12 +272,18 @@ class ACOOptimizer:
                         row["is_global_best"] = row["candidate_id"] == self.global_best.candidate_id
 
         if self.global_best is None:
+            self.run_status = "failed"
             raise RuntimeError("All candidate evaluations failed; no global best exists")
+        self.run_status = "success"
         return self.global_best
 
     def write_logs(self, output_dir: str) -> None:
         directory = Path(output_dir)
         directory.mkdir(parents=True, exist_ok=True)
+        for row in self.trial_rows:
+            row["run_status"] = self.run_status
+        for row in self.pheromone_history:
+            row["run_status"] = self.run_status
         self._write_csv(directory / "aco_trials.csv", self.trial_rows)
         self._write_csv(directory / "pheromone_history.csv", self.pheromone_history)
 

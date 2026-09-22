@@ -92,6 +92,8 @@ Q = 1.0
 
 Candidate fitness is validation accuracy. Early stopping monitors validation accuracy with `patience = 2`, restores best weights, and records `best_epoch`; validation-loss and training-time tie-breaks make selection deterministic. Failed trials have no fitness and do not reinforce pheromone. Cached successful results are valid trials and can reinforce according to the active mode.
 
+Trial and pheromone logs include the requested budget name, effective ant/iteration/epoch counts, and run-level status (`success` or `failed`). This keeps CLI budget overrides auditable.
+
 Paper modes use each optimizer's framework default learning rate. Improved mode searches learning rate explicitly. Candidate seeds use a stable SHA-256 hash of run seed, mode, and canonical configuration; iteration and ant ID are not included.
 
 ## Experiment hierarchy
@@ -100,7 +102,7 @@ Paper modes use each optimizer's framework default learning rate. Improved mode 
 Smoke:    2 ants x 2 iterations x 2 max epochs
 Pilot:   10 ants x 10 iterations x 10 max epochs
 Main:    20 ants x 20 iterations x 10 max epochs, seeds 42/43/44
-Extended: 20 ants x 50 iterations, optional
+Diagnostic: 20 ants x 50 iterations x 10 max epochs, optional for paper-literal
 ```
 
 The primary comparison is `paper_conventional` versus `improved`. `paper_literal` is diagnostic unless resources permit a supplementary three-seed run.

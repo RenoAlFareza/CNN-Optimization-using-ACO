@@ -9,7 +9,7 @@ from typing import Any
 import numpy as np
 
 from cnn_model import build_model
-from config import ExperimentConfig
+from config import ExperimentConfig, mode_interpretation
 from dataset import DatasetBundle
 from evaluation_contract import EvaluationResult, candidate_id, canonical_json, trial_seed
 
@@ -106,6 +106,8 @@ def _evaluation_metadata(
             "run_seed": experiment.run_seed,
             "trial_seed": seed,
             "mode": experiment.mode,
+            "mode_interpretation": mode_interpretation(experiment.mode),
+            "budget": experiment.budget_name,
             "max_epochs": experiment.max_epochs,
             "early_stopping_monitor": "val_sparse_categorical_accuracy",
             "early_stopping_patience": experiment.early_stopping_patience,

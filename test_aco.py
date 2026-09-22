@@ -9,7 +9,13 @@ from tempfile import TemporaryDirectory
 
 from ACO import synthetic_evaluator
 from aco_optimizer import ACOOptimizer
-from config import ExperimentConfig, budget_values, get_search_space, paper_label
+from config import (
+    ExperimentConfig,
+    budget_values,
+    get_search_space,
+    mode_interpretation,
+    paper_label,
+)
 from evaluation_contract import EvaluationResult, candidate_id, trial_seed
 
 
@@ -163,6 +169,7 @@ class ACOTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "All candidate evaluations failed"):
             optimizer.run()
 
+        self.assertEqual(optimizer.run_status, "failed")
         self.assertEqual(float(optimizer.pheromone[0, 0]), 0.75)
         self.assertEqual(optimizer.trial_rows[0]["status"], "failed")
         self.assertIsNone(optimizer.trial_rows[0]["fitness"])
@@ -300,3 +307,138 @@ class ACOTest(unittest.TestCase):
     def test_linear_identifier_preserves_the_paper_label(self) -> None:
         self.assertEqual(paper_label("activation", "linear"), "linier")
         self.assertEqual(paper_label("activation", "relu"), "relu")
+
+    def test_paper_literal_updates_after_each_ant(self) -> None:
+        optimizer = ACOOptimizer(
+            ExperimentConfig(
+                mode="paper_literal",
+                ants=2,
+                iterations=1,
+                max_epochs=1,
+                search_space={"choice": ["only"]},
+            ),
+            synthetic_evaluator,
+        )
+
+        optimizer.run()
+
+        # Each ant applies 0.75 evaporation and +0.5 reinforcement.
+        self.assertAlmostEqual(float(optimizer.pheromone[0, 0]), 1.4375)
+        self.assertEqual(
+            [row["phase"] for row in optimizer.pheromone_history],
+            ["before_sampling", "after_update", "before_sampling", "after_update"],
+        )
+        self.assertEqual(
+            [row["update_step"] for row in optimizer.pheromone_history],
+            [0, 1, 2, 3],
+        )
+        self.assertEqual(
+            optimizer.pheromone_history[1]["pheromone"],
+            optimizer.pheromone_history[2]["pheromone"],
+        )
+
+    def test_paper_literal_next_ant_samples_from_updated_probabilities(self) -> None:
+        optimizer = ACOOptimizer(
+            ExperimentConfig(
+                mode="paper_literal",
+                ants=2,
+                iterations=1,
+                max_epochs=1,
+                search_space={"choice": ["a", "b"]},
+            ),
+            synthetic_evaluator,
+        )
+
+        optimizer.run()
+
+        self.assertNotEqual(
+            optimizer.trial_rows[0]["selection_probabilities"],
+            optimizer.trial_rows[1]["selection_probabilities"],
+        )
+
+    def test_paper_literal_failed_ant_evaporates_without_reinforcement(self) -> None:
+        def failing_evaluator(configuration: dict[str, object], experiment: ExperimentConfig) -> EvaluationResult:
+            return EvaluationResult(
+                status="failed",
+                fitness=None,
+                train_accuracy=None,
+                validation_accuracy=None,
+                validation_loss=None,
+                best_epoch=None,
+                training_time_seconds=0.1,
+                failure_reason="synthetic failure",
+            )
+
+        optimizer = ACOOptimizer(
+            ExperimentConfig(
+                mode="paper_literal",
+                ants=2,
+                iterations=1,
+                max_epochs=1,
+                search_space={"choice": ["only"]},
+            ),
+            failing_evaluator,
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "All candidate evaluations failed"):
+            optimizer.run()
+
+        self.assertAlmostEqual(float(optimizer.pheromone[0, 0]), 0.5625)
+        self.assertEqual(len(optimizer.pheromone_history), 4)
+
+    def test_literal_mode_exposes_diagnostic_budget_and_interpretation(self) -> None:
+        self.assertEqual(
+            budget_values("diagnostic"),
+            {"ants": 20, "iterations": 50, "max_epochs": 10},
+        )
+        self.assertIn("not_verified_original_code", mode_interpretation("paper_literal"))
+
+    def test_budget_and_interpretation_are_recorded_in_literal_logs(self) -> None:
+        optimizer = ACOOptimizer(
+            ExperimentConfig(
+                mode="paper_literal",
+                budget_name="diagnostic",
+                ants=1,
+                iterations=1,
+                max_epochs=1,
+                search_space={"choice": ["only"]},
+            ),
+            synthetic_evaluator,
+        )
+
+        optimizer.run()
+
+        self.assertEqual(optimizer.trial_rows[0]["budget"], "diagnostic")
+        self.assertIn(
+            "not_verified_original_code",
+            optimizer.trial_rows[0]["mode_interpretation"],
+        )
+        self.assertEqual(optimizer.pheromone_history[0]["budget"], "diagnostic")
+
+    def test_successful_run_and_logs_have_status_and_effective_budget(self) -> None:
+        optimizer = ACOOptimizer(
+            ExperimentConfig(
+                mode="paper_literal",
+                budget_name="diagnostic",
+                ants=1,
+                iterations=1,
+                max_epochs=3,
+                search_space={"choice": ["only"]},
+            ),
+            synthetic_evaluator,
+        )
+
+        optimizer.run()
+
+        self.assertEqual(optimizer.run_status, "success")
+        self.assertEqual(optimizer.trial_rows[0]["effective_ants"], 1)
+        self.assertEqual(optimizer.trial_rows[0]["effective_iterations"], 1)
+        self.assertEqual(optimizer.trial_rows[0]["effective_max_epochs"], 3)
+
+        with TemporaryDirectory() as directory:
+            optimizer.write_logs(directory)
+            trial_log = (Path(directory) / "aco_trials.csv").read_text(encoding="utf-8")
+            history_log = (Path(directory) / "pheromone_history.csv").read_text(encoding="utf-8")
+            self.assertIn("run_status", trial_log)
+            self.assertIn("success", trial_log)
+            self.assertIn("run_status", history_log)

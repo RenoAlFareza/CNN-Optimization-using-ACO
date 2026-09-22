@@ -31,7 +31,11 @@ def synthetic_evaluator(configuration: dict[str, Any], experiment: ExperimentCon
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run discrete ACO for CNN hyperparameter tuning.")
     parser.add_argument("--mode", choices=["paper_literal", "paper_conventional", "improved"], default="improved")
-    parser.add_argument("--budget", choices=["smoke", "pilot", "main"], default="smoke")
+    parser.add_argument(
+        "--budget",
+        choices=["smoke", "pilot", "main", "diagnostic"],
+        default="smoke",
+    )
     parser.add_argument("--ants", type=int)
     parser.add_argument("--iterations", type=int)
     parser.add_argument("--max-epochs", type=int)
@@ -52,6 +56,7 @@ def main() -> None:
         max_epochs=args.max_epochs if args.max_epochs is not None else budget["max_epochs"],
         run_seed=args.seed,
         cache_enabled=args.cache,
+        budget_name=args.budget,
         search_space=get_search_space(args.mode),
         output_dir=args.output_dir,
     )
@@ -67,8 +72,13 @@ def main() -> None:
 
     started = time.perf_counter()
     optimizer = ACOOptimizer(config, evaluator)
-    best = optimizer.run()
-    optimizer.write_logs(config.output_dir)
+    try:
+        best = optimizer.run()
+    except Exception:
+        optimizer.run_status = "failed"
+        raise
+    finally:
+        optimizer.write_logs(config.output_dir)
     elapsed = time.perf_counter() - started
     print(f"mode={config.mode} seed={config.run_seed} runtime_seconds={elapsed:.3f}")
     print(f"best_fitness={best.result.fitness:.6f}")

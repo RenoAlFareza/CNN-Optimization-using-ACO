@@ -59,6 +59,13 @@ EXPERIMENT_BUDGETS: dict[str, dict[str, int]] = {
     "smoke": {"ants": 2, "iterations": 2, "max_epochs": 2},
     "pilot": {"ants": 10, "iterations": 10, "max_epochs": 10},
     "main": {"ants": 20, "iterations": 20, "max_epochs": 10},
+    "diagnostic": {"ants": 20, "iterations": 50, "max_epochs": 10},
+}
+
+MODE_INTERPRETATIONS = {
+    "paper_literal": "literal_pseudocode_interpretation_not_verified_original_code",
+    "paper_conventional": "iteration_based_paper_interpretation",
+    "improved": "project_improvement",
 }
 
 
@@ -80,6 +87,7 @@ class ExperimentConfig:
     deterministic: bool = True
     output_dir: str = "experiments"
     model_dir: str = "models"
+    budget_name: str = "custom"
     search_space: dict[str, list[Any]] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -125,6 +133,13 @@ def budget_values(name: str) -> dict[str, int]:
         return dict(EXPERIMENT_BUDGETS[name])
     except KeyError as error:
         raise ValueError(f"Unsupported experiment budget: {name}") from error
+
+
+def mode_interpretation(mode: str) -> str:
+    try:
+        return MODE_INTERPRETATIONS[mode]
+    except KeyError as error:
+        raise ValueError(f"Unsupported mode: {mode}") from error
 
 
 def paper_label(parameter_name: str, value: Any) -> Any:

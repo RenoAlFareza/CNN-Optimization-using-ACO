@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import argparse
+import json
 import time
+from pathlib import Path
 from typing import Any
 
 from aco_optimizer import ACOOptimizer
 from config import ExperimentConfig, budget_values, get_search_space
 from evaluation_contract import EvaluationResult
+from evaluator import environment_metadata
 
 
 def synthetic_evaluator(configuration: dict[str, Any], experiment: ExperimentConfig) -> EvaluationResult:
@@ -44,6 +47,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--synthetic", action="store_true", help="Test ACO without TensorFlow/MNIST.")
     parser.add_argument("--output-dir", default="experiments")
     parser.add_argument(
+        "--analyze",
+        action="store_true",
+        help="Analyze existing experiment CSV/JSON artifacts and generate plots.",
+    )
+    parser.add_argument(
         "--primary",
         action="store_true",
         help="Run paper-conventional and improved modes across primary seeds.",
@@ -59,6 +67,14 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+    if args.analyze:
+        from analysis_report import analyze_experiment
+
+        result = analyze_experiment(args.output_dir)
+        print(f"evaluator_type={result['evaluator_type']}")
+        print(f"best_validation_accuracy={result['best_validation_accuracy']}")
+        print(f"analysis_report={args.output_dir}/analysis/analysis_report.md")
+        return
     budget = budget_values(args.budget)
 
     if args.primary or args.final:
@@ -117,7 +133,13 @@ def main() -> None:
         cache_enabled=args.cache,
         budget_name=args.budget,
         search_space=get_search_space(args.mode),
-        output_dir=args.output_dir,
+        output_dir=str(
+            Path(args.output_dir) / args.mode / (
+                f"{args.budget}-ants{args.ants or budget['ants']}"
+                f"-iterations{args.iterations or budget['iterations']}"
+                f"-epochs{args.max_epochs or budget['max_epochs']}"
+            ) / f"seed_{args.seed}"
+        ),
     )
 
     if args.synthetic:
@@ -129,16 +151,48 @@ def main() -> None:
         data = load_mnist(config.dataset_seed)
         evaluator = lambda candidate, experiment: evaluate_candidate(candidate, experiment, data)
 
-    started = time.perf_counter()
     optimizer = ACOOptimizer(config, evaluator)
+    started = time.perf_counter()
+    best = None
+    failure_reason = ""
     try:
         best = optimizer.run()
-    except Exception:
+    except Exception as error:
         optimizer.run_status = "failed"
-        raise
+        failure_reason = f"{type(error).__name__}: {error}"
     finally:
         optimizer.write_logs(config.output_dir)
     elapsed = time.perf_counter() - started
+    Path(config.output_dir).mkdir(parents=True, exist_ok=True)
+    (Path(config.output_dir) / "run_summary.json").write_text(
+        json.dumps(
+            {
+                "run_id": (
+                    f"{config.mode}-{config.budget_name}-ants{config.ants}-"
+                    f"iterations{config.iterations}-epochs{config.max_epochs}-"
+                    f"seed-{config.run_seed}"
+                ),
+                "mode": config.mode,
+                "budget_name": config.budget_name,
+                "seed": config.run_seed,
+                "runtime_seconds": elapsed,
+                "evaluator_type": "synthetic" if args.synthetic else "cnn_mnist",
+                "run_status": optimizer.run_status,
+                "failure_reason": failure_reason,
+                "effective_ants": config.ants,
+                "effective_iterations": config.iterations,
+                "effective_max_epochs": config.max_epochs,
+                "environment": environment_metadata(),
+                "trial_count": len(optimizer.trial_rows),
+                "failed_trials": sum(row["status"] == "failed" for row in optimizer.trial_rows),
+                "cache_hits": sum(bool(row["cache_hit"]) for row in optimizer.trial_rows),
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    if best is None:
+        raise RuntimeError(failure_reason or "ACO run failed")
     print(f"mode={config.mode} seed={config.run_seed} runtime_seconds={elapsed:.3f}")
     print(f"best_fitness={best.result.fitness:.6f}")
     print(f"best_configuration={best.configuration}")

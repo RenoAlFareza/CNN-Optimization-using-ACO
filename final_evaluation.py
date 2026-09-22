@@ -10,7 +10,7 @@ from typing import Any, Callable
 
 from config import ExperimentConfig
 from dataset import DatasetBundle
-from evaluator import train_final_model
+from evaluator import environment_metadata, train_final_model
 from experiment_runner import ExperimentReport
 
 
@@ -55,6 +55,7 @@ def _write_config(
     configuration: dict[str, Any],
     best_epoch: int,
     data: DatasetBundle,
+    run_id: str,
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
@@ -62,12 +63,14 @@ def _write_config(
             {
                 "mode": mode,
                 "seed": seed,
+                "run_id": run_id,
                 "selected_configuration": configuration,
                 "best_epoch": best_epoch,
                 "dataset_split_id": data.split_id,
                 "training_development_size": len(data.x_train) + len(data.x_validation),
                 "test_size": len(data.x_test),
                 "test_used_for_selection": False,
+                "environment": environment_metadata(),
             },
             indent=2,
             sort_keys=True,
@@ -87,6 +90,7 @@ def _write_report(result: FinalEvaluationResult, output_dir: Path) -> str:
                 "runtime_seconds": result.runtime_seconds,
                 "failure_reason": result.failure_reason,
                 "mode_results": result.mode_results,
+                "environment": environment_metadata(),
             },
             indent=2,
             sort_keys=True,
@@ -124,12 +128,17 @@ def run_final_evaluations(
         configuration = _configuration_for_aggregate(mode_result)
         mode_record: dict[str, Any] = {
             "mode": mode_result.mode,
+            "budget_name": mode_result.budget_name,
+            "effective_ants": mode_result.effective_ants,
+            "effective_iterations": mode_result.effective_iterations,
+            "effective_max_epochs": mode_result.effective_max_epochs,
             "status": "success",
             "seed_results": [],
         }
         for seed_run in mode_result.seed_runs:
             seed_record: dict[str, Any] = {
                 "seed": seed_run.seed,
+                "run_id": seed_run.run_id,
                 "status": "success",
                 "test_evaluation_performed": False,
             }
@@ -148,7 +157,10 @@ def run_final_evaluations(
                         if key != "loss"
                     },
                 )
-                model_path = root / mode_result.mode / f"seed_{seed_run.seed}" / "best_model.keras"
+                model_path = (
+                    root / mode_result.mode / mode_result.budget_name
+                    / (seed_run.run_id or f"seed_{seed_run.seed}") / "best_model.keras"
+                )
                 config_path = model_path.parent / "best_config.json"
                 _write_config(
                     config_path,
@@ -157,6 +169,7 @@ def run_final_evaluations(
                     configuration,
                     best_epoch,
                     data,
+                    seed_run.run_id or f"{mode_result.mode}-{mode_result.budget_name}-seed-{seed_run.seed}",
                 )
                 final_metrics = trainer(
                     configuration,

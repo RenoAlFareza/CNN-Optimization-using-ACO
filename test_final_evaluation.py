@@ -224,7 +224,7 @@ class FinalEvaluationTests(unittest.TestCase):
             self.assertTrue(all(Path(call["output_path"]).parent.exists() for call in calls))
             self.assertTrue((Path(directory) / "final_evaluation_report.json").exists())
 
-            config_files = list(Path(directory).glob("improved/seed_*/best_config.json"))
+            config_files = list(Path(directory).glob("improved/main/*/best_config.json"))
             self.assertEqual(len(config_files), 2)
             payload = json.loads(config_files[0].read_text(encoding="utf-8"))
             self.assertEqual(payload["dataset_split_id"], "test-split")

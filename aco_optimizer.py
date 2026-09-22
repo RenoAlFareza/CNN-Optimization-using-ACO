@@ -77,7 +77,7 @@ class ACOOptimizer:
             for option_index, option in enumerate(self.config.search_space[name]):
                 self.pheromone_history.append(
                     {
-                        "run_id": f"{self.config.mode}-seed-{self.config.run_seed}",
+                        "run_id": self._run_id(),
                         "mode": self.config.mode,
                         "family": family_for_mode(self.config.mode),
                         "mode_interpretation": mode_interpretation(self.config.mode),
@@ -185,7 +185,7 @@ class ACOOptimizer:
         )
 
         row = {
-            "run_id": f"{self.config.mode}-seed-{self.config.run_seed}",
+            "run_id": self._run_id(),
             "mode": self.config.mode,
             "family": family_for_mode(self.config.mode),
             "mode_interpretation": mode_interpretation(self.config.mode),
@@ -243,6 +243,13 @@ class ACOOptimizer:
                 "early_stopping_patience": self.config.early_stopping_patience,
                 "deterministic": self.config.deterministic,
             }
+        )
+
+    def _run_id(self) -> str:
+        return (
+            f"{self.config.mode}-{self.config.budget_name}-"
+            f"ants{self.config.ants}-iterations{self.config.iterations}-"
+            f"epochs{self.config.max_epochs}-seed-{self.config.run_seed}"
         )
 
     def run(self) -> CandidateResult:

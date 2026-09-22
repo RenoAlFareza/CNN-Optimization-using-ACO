@@ -109,6 +109,8 @@ The primary comparison is `paper_conventional` versus `improved`. `paper_literal
 
 The repeated-run runner executes both primary modes for seeds 42, 43, and 44 using the main budget, then confirms every per-seed global-best candidate on every seed using validation results only. Its report records per-seed and aggregate runtime, failed trials, cache hits, effective budget, configuration metadata, and the explicit pipeline-comparison caveat. It does not accept a test evaluator; final test evaluation belongs to the final-retraining stage.
 
+The analysis tool reads trial/pheromone CSVs and the primary/final JSON reports, then writes `analysis_report.md`, `analysis_summary.json`, and four plots: convergence, pheromone evolution, probability evolution, and runtime/trial outcomes. It preserves the evaluator type (`synthetic` versus `cnn_mnist`) and explicitly states that smoke/pilot outputs are implementation validation rather than primary scientific results.
+
 After tuning, a new model is trained on all 60,000 training-development images for the selected `best_epoch` and evaluated once on the untouched test set. Test accuracy never selects a configuration.
 
 ## Interpretation caveat

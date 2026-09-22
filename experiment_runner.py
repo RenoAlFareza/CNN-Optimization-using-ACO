@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import platform
 import time
 from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
@@ -15,6 +16,25 @@ from evaluation_contract import EvaluationResult
 
 DEFAULT_PRIMARY_MODES = ("paper_conventional", "improved")
 DEFAULT_PRIMARY_SEEDS = (42, 43, 44)
+
+
+def environment_metadata() -> dict[str, str]:
+    import numpy as np
+
+    metadata = {
+        "python_version": platform.python_version(),
+        "platform": platform.platform(),
+        "numpy_version": np.__version__,
+    }
+    try:
+        import tensorflow as tf
+
+        metadata["tensorflow_version"] = tf.__version__
+        metadata["keras_version"] = str(tf.keras.__version__)
+    except (ImportError, AttributeError):
+        metadata["tensorflow_version"] = "unavailable"
+        metadata["keras_version"] = "unavailable"
+    return metadata
 
 
 def _failed_result(error: Exception) -> EvaluationResult:
@@ -37,6 +57,7 @@ class SeedRunResult:
     seed: int
     status: str
     runtime_seconds: float
+    run_id: str = ""
     global_best_candidate_id: str | None = None
     global_best_configuration: dict[str, Any] | None = None
     best_validation_accuracy: float | None = None
@@ -134,6 +155,7 @@ class ExperimentReport:
         "pheromone-update ablation."
     )
     evaluator_type: str = "cnn_mnist"
+    environment: dict[str, str] = field(default_factory=environment_metadata)
 
 
 def _aggregate_sort_key(candidate: AggregateCandidate) -> tuple[float, float, float, str]:
@@ -177,6 +199,7 @@ def _run_one_seed(
     search_space: dict[str, list[Any]],
     output_dir: Path | None,
     cache_enabled: bool,
+    evaluator_type: str = "cnn_mnist",
 ) -> tuple[SeedRunResult, dict[str, EvaluationResult]]:
     config = ExperimentConfig(
         mode=mode,
@@ -196,7 +219,11 @@ def _run_one_seed(
         )
     optimizer = ACOOptimizer(config, evaluator)
     started = time.perf_counter()
-    run_output = output_dir / mode / f"seed_{seed}" if output_dir else None
+    run_id = (
+        f"{mode}-{budget_name}-ants{budget['ants']}-"
+        f"iterations{budget['iterations']}-epochs{budget['max_epochs']}-seed-{seed}"
+    )
+    run_output = output_dir / mode / budget_name / run_id if output_dir else None
     try:
         best = optimizer.run()
         status = "success"
@@ -209,12 +236,42 @@ def _run_one_seed(
     finally:
         if run_output is not None:
             optimizer.write_logs(str(run_output))
+            run_output.mkdir(parents=True, exist_ok=True)
+            (run_output / "run_summary.json").write_text(
+                json.dumps(
+                    {
+                        "run_id": run_id,
+                        "mode": mode,
+                        "budget_name": budget_name,
+                        "seed": seed,
+                        "runtime_seconds": time.perf_counter() - started,
+                        "run_status": optimizer.run_status,
+                        "failure_reason": failure_reason,
+                        "evaluator_type": evaluator_type,
+                        "trial_count": len(optimizer.trial_rows),
+                        "failed_trials": sum(
+                            row["status"] == "failed" for row in optimizer.trial_rows
+                        ),
+                        "cache_hits": sum(
+                            bool(row["cache_hit"]) for row in optimizer.trial_rows
+                        ),
+                        "environment": environment_metadata(),
+                    },
+                    indent=2,
+                    sort_keys=True,
+                ),
+                encoding="utf-8",
+            )
 
     rows = optimizer.trial_rows
     seed_result = SeedRunResult(
         mode=mode,
         family=family_for_mode(mode),
         seed=seed,
+        run_id=(
+            f"{mode}-{budget_name}-ants{budget['ants']}-"
+            f"iterations{budget['iterations']}-epochs{budget['max_epochs']}-seed-{seed}"
+        ),
         status=status,
         runtime_seconds=time.perf_counter() - started,
         global_best_candidate_id=best.candidate_id if best else None,
@@ -288,6 +345,10 @@ def _confirm_candidates(
             confirmation_records.append(
                 {
                     "candidate_id": identifier,
+                    "run_id": (
+                        f"{mode}-{budget_name}-ants{budget['ants']}-"
+                        f"iterations{budget['iterations']}-epochs{budget['max_epochs']}-seed-{seed}"
+                    ),
                     "configuration": configuration,
                     "seed": seed,
                     "status": result.status,
@@ -353,6 +414,7 @@ def write_report(report: ExperimentReport, output_dir: str) -> str:
         "test_evaluations": report.test_evaluations,
         "comparison_note": report.comparison_note,
         "evaluator_type": report.evaluator_type,
+        "environment": report.environment,
         "mode_results": [
             {
                 "mode": result.mode,
@@ -466,6 +528,7 @@ def _run_experiment_plan(
                 search_space,
                 root,
                 cache_enabled,
+                evaluator_type,
             )
             for seed in seeds
         ]
@@ -516,7 +579,11 @@ def _run_experiment_plan(
             )
         )
 
-    report = ExperimentReport(mode_results=mode_results, evaluator_type=evaluator_type)
+    report = ExperimentReport(
+        mode_results=mode_results,
+        evaluator_type=evaluator_type,
+        environment=environment_metadata(),
+    )
     if output_dir:
         write_report(report, output_dir)
     return report

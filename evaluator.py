@@ -187,6 +187,13 @@ def train_final_model(
     output_path: str,
 ) -> dict[str, Any]:
     """Train a new model on 60,000 development images and evaluate once on test."""
+    development_size = len(data.x_train) + len(data.x_validation)
+    if development_size != 60_000:
+        raise ValueError(
+            "Final retraining requires exactly 60,000 training-development images"
+        )
+    if len(data.x_test) != 10_000:
+        raise ValueError("Final evaluation requires exactly 10,000 test images")
     seed = trial_seed(experiment.run_seed, experiment.mode, configuration)
     seed_tensorflow(seed, experiment.deterministic)
     model, effective_learning_rate = build_model(configuration, experiment.mode)

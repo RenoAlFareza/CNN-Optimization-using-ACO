@@ -49,6 +49,11 @@ def parse_args() -> argparse.Namespace:
         help="Run paper-conventional and improved modes across primary seeds.",
     )
     parser.add_argument("--seeds", nargs="+", type=int, default=[42, 43, 44])
+    parser.add_argument(
+        "--final",
+        action="store_true",
+        help="Run primary validation search, then retrain and test final models.",
+    )
     return parser.parse_args()
 
 
@@ -56,11 +61,13 @@ def main() -> None:
     args = parse_args()
     budget = budget_values(args.budget)
 
-    if args.primary:
+    if args.primary or args.final:
         from experiment_runner import run_primary_experiments
 
+        if args.final and args.synthetic:
+            raise ValueError("--final requires the real CNN/MNIST evaluator; omit --synthetic")
         if args.budget != "main" or tuple(args.seeds) != (42, 43, 44):
-            raise ValueError("--primary requires main budget and seeds 42 43 44")
+            raise ValueError("--primary/--final requires main budget and seeds 42 43 44")
         if any(value is not None for value in (args.ants, args.iterations, args.max_epochs)):
             raise ValueError("--primary uses the fixed main budget without overrides")
 
@@ -84,6 +91,18 @@ def main() -> None:
             cache_enabled=args.cache,
             evaluator_type="synthetic" if args.synthetic else "cnn_mnist",
         )
+        if args.final:
+            from final_evaluation import run_final_evaluations
+
+            final_result = run_final_evaluations(
+                report=report,
+                data=data,
+                output_dir=args.output_dir,
+            )
+            print(f"final_status={final_result.status}")
+            print(f"final_test_evaluations={final_result.test_evaluations}")
+            print(f"final_report={final_result.output_path}")
+            return
         print(f"primary_modes={len(report.mode_results)} seeds={tuple(args.seeds)}")
         print(f"test_evaluations={report.test_evaluations}")
         print(f"report={report.output_path}")

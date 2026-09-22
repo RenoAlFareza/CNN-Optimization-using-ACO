@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import argparse
-import math
 import time
 from typing import Any
 
 from aco_optimizer import ACOOptimizer
-from config import ExperimentConfig, get_search_space
+from config import ExperimentConfig, budget_values, get_search_space
 from evaluation_contract import EvaluationResult
 
 
@@ -32,9 +31,10 @@ def synthetic_evaluator(configuration: dict[str, Any], experiment: ExperimentCon
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run discrete ACO for CNN hyperparameter tuning.")
     parser.add_argument("--mode", choices=["paper_literal", "paper_conventional", "improved"], default="improved")
-    parser.add_argument("--ants", type=int, default=2)
-    parser.add_argument("--iterations", type=int, default=2)
-    parser.add_argument("--max-epochs", type=int, default=2)
+    parser.add_argument("--budget", choices=["smoke", "pilot", "main"], default="smoke")
+    parser.add_argument("--ants", type=int)
+    parser.add_argument("--iterations", type=int)
+    parser.add_argument("--max-epochs", type=int)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--cache", action="store_true")
     parser.add_argument("--synthetic", action="store_true", help="Test ACO without TensorFlow/MNIST.")
@@ -44,11 +44,12 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+    budget = budget_values(args.budget)
     config = ExperimentConfig(
         mode=args.mode,
-        ants=args.ants,
-        iterations=args.iterations,
-        max_epochs=args.max_epochs,
+        ants=args.ants if args.ants is not None else budget["ants"],
+        iterations=args.iterations if args.iterations is not None else budget["iterations"],
+        max_epochs=args.max_epochs if args.max_epochs is not None else budget["max_epochs"],
         run_seed=args.seed,
         cache_enabled=args.cache,
         search_space=get_search_space(args.mode),

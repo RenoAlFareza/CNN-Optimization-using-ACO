@@ -55,6 +55,12 @@ IMPROVED_SEARCH_SPACE: dict[str, list[Any]] = {
     "learning_rate": [1e-4, 1e-3, 1e-2],
 }
 
+EXPERIMENT_BUDGETS: dict[str, dict[str, int]] = {
+    "smoke": {"ants": 2, "iterations": 2, "max_epochs": 2},
+    "pilot": {"ants": 10, "iterations": 10, "max_epochs": 10},
+    "main": {"ants": 20, "iterations": 20, "max_epochs": 10},
+}
+
 
 @dataclass(frozen=True)
 class ExperimentConfig:
@@ -83,6 +89,8 @@ class ExperimentConfig:
             raise ValueError("ants, iterations, and max_epochs must be positive")
         if not 0 <= self.rho < 1:
             raise ValueError("rho must be in [0, 1)")
+        if self.mode in {"paper_literal", "paper_conventional"} and self.rho != 0.25:
+            raise ValueError("paper-faithful modes require rho=0.25")
         if self.tau_0 <= 0 or self.tau_min <= 0:
             raise ValueError("tau_0 and tau_min must be positive")
         if not self.search_space:
@@ -110,3 +118,17 @@ def family_for_mode(mode: str) -> str:
     if mode == "improved":
         return "improved"
     raise ValueError(f"Unsupported mode: {mode}")
+
+
+def budget_values(name: str) -> dict[str, int]:
+    try:
+        return dict(EXPERIMENT_BUDGETS[name])
+    except KeyError as error:
+        raise ValueError(f"Unsupported experiment budget: {name}") from error
+
+
+def paper_label(parameter_name: str, value: Any) -> Any:
+    """Return the source-paper spelling where it differs from the identifier."""
+    if parameter_name == "activation" and value == "linear":
+        return "linier"
+    return value

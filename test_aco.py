@@ -9,7 +9,7 @@ from tempfile import TemporaryDirectory
 
 from ACO import synthetic_evaluator
 from aco_optimizer import ACOOptimizer
-from config import ExperimentConfig
+from config import ExperimentConfig, budget_values, get_search_space, paper_label
 from evaluation_contract import EvaluationResult, candidate_id, trial_seed
 
 
@@ -210,3 +210,93 @@ class ACOTest(unittest.TestCase):
         )
         with self.assertRaisesRegex(ValueError, "at least one option"):
             ACOOptimizer(config, synthetic_evaluator)
+
+    def test_paper_conventional_evaporates_once_then_reinforces_each_valid_ant(self) -> None:
+        config = ExperimentConfig(
+            mode="paper_conventional",
+            ants=2,
+            iterations=1,
+            max_epochs=1,
+            search_space={"choice": ["only"]},
+        )
+        optimizer = ACOOptimizer(config, synthetic_evaluator)
+
+        optimizer.run()
+
+        # One evaporation, followed by +0.5 for each of two valid ants.
+        self.assertEqual(float(optimizer.pheromone[0, 0]), 1.75)
+        phases = [row["phase"] for row in optimizer.pheromone_history]
+        self.assertEqual(phases, ["before_sampling", "after_update"])
+        self.assertEqual(
+            [row["update_step"] for row in optimizer.pheromone_history],
+            [0, 1],
+        )
+
+    def test_paper_conventional_failed_ant_does_not_reinforce(self) -> None:
+        def failing_evaluator(configuration: dict[str, object], experiment: ExperimentConfig) -> EvaluationResult:
+            return EvaluationResult(
+                status="failed",
+                fitness=None,
+                train_accuracy=None,
+                validation_accuracy=None,
+                validation_loss=None,
+                best_epoch=None,
+                training_time_seconds=0.1,
+                failure_reason="synthetic failure",
+            )
+
+        config = ExperimentConfig(
+            mode="paper_conventional",
+            ants=2,
+            iterations=1,
+            max_epochs=1,
+            search_space={"choice": ["only"]},
+        )
+        optimizer = ACOOptimizer(config, failing_evaluator)
+
+        with self.assertRaisesRegex(RuntimeError, "All candidate evaluations failed"):
+            optimizer.run()
+
+        self.assertEqual(float(optimizer.pheromone[0, 0]), 0.75)
+
+    def test_paper_search_space_has_eight_options_per_dimension(self) -> None:
+        search_space = get_search_space("paper_conventional")
+
+        self.assertEqual(len(search_space), 8)
+        self.assertTrue(all(len(options) == 8 for options in search_space.values()))
+        self.assertIn("linear", search_space["activation"])
+
+    def test_paper_conventional_requires_journal_evaporation_rate(self) -> None:
+        with self.assertRaisesRegex(ValueError, "require rho=0.25"):
+            ExperimentConfig(mode="paper_conventional", rho=0.2)
+
+    def test_named_budgets_expose_smoke_and_pilot_protocols(self) -> None:
+        self.assertEqual(
+            budget_values("smoke"),
+            {"ants": 2, "iterations": 2, "max_epochs": 2},
+        )
+        self.assertEqual(
+            budget_values("pilot"),
+            {"ants": 10, "iterations": 10, "max_epochs": 10},
+        )
+
+    def test_conventional_ants_share_iteration_start_probabilities(self) -> None:
+        optimizer = ACOOptimizer(
+            ExperimentConfig(
+                mode="paper_conventional",
+                ants=2,
+                iterations=1,
+                max_epochs=1,
+                search_space={"choice": ["a", "b"]},
+            ),
+            synthetic_evaluator,
+        )
+
+        optimizer.run()
+
+        probabilities = [row["selection_probabilities"] for row in optimizer.trial_rows]
+        self.assertEqual(probabilities[0], probabilities[1])
+
+    def test_linear_identifier_preserves_the_paper_label(self) -> None:
+        self.assertEqual(paper_label("activation", "linear"), "linier")
+        self.assertEqual(paper_label("activation", "relu"), "relu")

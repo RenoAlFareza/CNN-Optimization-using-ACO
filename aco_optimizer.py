@@ -10,7 +10,7 @@ from typing import Any, Callable
 
 import numpy as np
 
-from config import ExperimentConfig, family_for_mode
+from config import ExperimentConfig, family_for_mode, paper_label
 from evaluation_contract import EvaluationResult, candidate_id, canonical_json
 
 
@@ -80,6 +80,7 @@ class ACOOptimizer:
                         "hyperparameter": name,
                         "option_index": option_index,
                         "option_value": json.dumps(option),
+                        "paper_label": json.dumps(paper_label(name, option)),
                         "pheromone": float(self.pheromone[parameter_index, option_index]),
                         "probability": float(probabilities[parameter_index, option_index]),
                     }
@@ -127,7 +128,7 @@ class ACOOptimizer:
         configuration: dict[str, Any],
         ant_id: int,
         iteration: int,
-        indices: list[int],
+        probabilities: np.ndarray,
     ) -> CandidateResult:
         key = candidate_id(configuration)
         cache_key = self._cache_key(configuration)
@@ -161,9 +162,22 @@ class ACOOptimizer:
             "semantic_warning": result.semantic_warning,
             "effective_learning_rate": result.effective_learning_rate,
             "cache_hit": cache_hit,
+            "selection_probabilities": json.dumps(
+                {
+                    name: probabilities[index, :count].tolist()
+                    for index, (name, count) in enumerate(
+                        zip(self.parameter_names, self.option_counts)
+                    )
+                },
+                sort_keys=True,
+            ),
             "is_iteration_best": False,
             "is_global_best": False,
         }
+        if self.config.mode in {"paper_literal", "paper_conventional"}:
+            row["paper_label_activation"] = paper_label(
+                "activation", configuration.get("activation", "")
+            )
         self.trial_rows.append(row)
         return CandidateResult(configuration, result, key, ant_id)
 
@@ -187,8 +201,10 @@ class ACOOptimizer:
             if self.config.mode == "paper_literal":
                 for ant_id in range(1, self.config.ants + 1):
                     self._record_pheromone(iteration, ant_id, "before_sampling")
-                    configuration, indices, _ = self._sample()
-                    candidate = self._evaluate(configuration, ant_id, iteration, indices)
+                    configuration, indices, probabilities = self._sample()
+                    candidate = self._evaluate(
+                        configuration, ant_id, iteration, probabilities
+                    )
                     iteration_results.append(candidate)
                     self._evaporate()
                     if candidate.result.fitness is not None:
@@ -198,10 +214,12 @@ class ACOOptimizer:
                 sampled: list[tuple[dict[str, Any], list[int]]] = []
                 self._record_pheromone(iteration, None, "before_sampling")
                 for ant_id in range(1, self.config.ants + 1):
-                    configuration, indices, _ = self._sample()
+                    configuration, indices, probabilities = self._sample()
                     sampled.append((configuration, indices))
                     iteration_results.append(
-                        self._evaluate(configuration, ant_id, iteration, indices)
+                        self._evaluate(
+                            configuration, ant_id, iteration, probabilities
+                        )
                     )
                 valid = [item for item in iteration_results if item.result.fitness is not None]
                 iteration_best = min(valid, key=lambda item: (

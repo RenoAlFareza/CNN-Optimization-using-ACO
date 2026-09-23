@@ -93,7 +93,7 @@ def aggregate_report() -> ExperimentReport:
             best_epoch=4,
         ),
     ]
-    return ExperimentReport(
+    report = ExperimentReport(
         mode_results=[
             ModeExperimentResult(
                 mode="improved",
@@ -130,6 +130,8 @@ def aggregate_report() -> ExperimentReport:
             )
         ]
     )
+    report.runtime_summary = {"primary_runtime_seconds": 12.5}
+    return report
 
 
 class FinalEvaluationTests(unittest.TestCase):
@@ -155,8 +157,8 @@ class FinalEvaluationTests(unittest.TestCase):
         experiment = ExperimentConfig(
             mode="improved",
             ants=20,
-            iterations=20,
-            max_epochs=10,
+            iterations=5,
+            max_epochs=5,
             run_seed=42,
             budget_name="main",
             search_space={key: [value] for key, value in configuration.items()},
@@ -217,6 +219,11 @@ class FinalEvaluationTests(unittest.TestCase):
 
             self.assertEqual(result.status, "success")
             self.assertEqual(result.test_evaluations, 2)
+            self.assertEqual(result.primary_runtime_seconds, 12.5)
+            self.assertGreaterEqual(
+                result.total_workflow_runtime_seconds,
+                result.primary_runtime_seconds,
+            )
             self.assertEqual([call["seed"] for call in calls], [42, 43])
             self.assertEqual([call["train_size"] for call in calls], [60000, 60000])
             self.assertEqual([call["test_size"] for call in calls], [10000, 10000])

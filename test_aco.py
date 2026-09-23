@@ -300,14 +300,18 @@ class ACOTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "require rho=0.25"):
             ExperimentConfig(mode="paper_conventional", rho=0.2)
 
-    def test_named_budgets_expose_smoke_and_pilot_protocols(self) -> None:
+    def test_named_budgets_expose_smoke_pilot_and_main_protocols(self) -> None:
         self.assertEqual(
             budget_values("smoke"),
             {"ants": 2, "iterations": 2, "max_epochs": 2},
         )
         self.assertEqual(
             budget_values("pilot"),
-            {"ants": 10, "iterations": 10, "max_epochs": 10},
+            {"ants": 20, "iterations": 1, "max_epochs": 5},
+        )
+        self.assertEqual(
+            budget_values("main"),
+            {"ants": 20, "iterations": 5, "max_epochs": 5},
         )
 
     def test_conventional_ants_share_iteration_start_probabilities(self) -> None:

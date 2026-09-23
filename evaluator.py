@@ -35,9 +35,16 @@ def environment_metadata() -> dict[str, str]:
 
         metadata["tensorflow_version"] = tf.__version__
         metadata["keras_version"] = str(tf.keras.__version__)
+        devices = tf.config.list_physical_devices("GPU")
+        metadata["gpu_available"] = str(bool(devices)).lower()
+        metadata["gpu_devices"] = ";".join(device.name for device in devices)
+        metadata["gpu_utilization"] = "not_sampled"
     except (ImportError, AttributeError):
         metadata["tensorflow_version"] = "unavailable"
         metadata["keras_version"] = "unavailable"
+        metadata["gpu_available"] = "unknown"
+        metadata["gpu_devices"] = "unknown"
+        metadata["gpu_utilization"] = "not_sampled"
     return metadata
 
 
@@ -109,7 +116,8 @@ def _evaluation_metadata(
             "mode_interpretation": mode_interpretation(experiment.mode),
             "budget": experiment.budget_name,
             "max_epochs": experiment.max_epochs,
-            "early_stopping_monitor": "val_sparse_categorical_accuracy",
+            "early_stopping_monitor": "val_accuracy",
+            "early_stopping_mode": "max",
             "early_stopping_patience": experiment.early_stopping_patience,
             "early_stopping_min_delta": 0.0,
             "restore_best_weights": True,
@@ -135,7 +143,7 @@ def evaluate_candidate(
         import tensorflow as tf
 
         callback = tf.keras.callbacks.EarlyStopping(
-            monitor="val_sparse_categorical_accuracy",
+            monitor="val_accuracy",
             mode="max",
             patience=experiment.early_stopping_patience,
             min_delta=0.0,
@@ -153,6 +161,10 @@ def evaluate_candidate(
         history_dict = {key: [float(value) for value in values] for key, values in history.history.items()}
         best_epoch, best_accuracy, best_loss = _history_best(history_dict)
         train_accuracy = _training_accuracy(history_dict, best_epoch)
+        evaluation_metadata = _evaluation_metadata(data, experiment, seed_info, seed)
+        evaluation_metadata["actual_epochs_completed"] = len(
+            history_dict.get("accuracy", history_dict.get("loss", []))
+        )
         return EvaluationResult(
             status="success",
             fitness=best_accuracy,
@@ -163,7 +175,7 @@ def evaluate_candidate(
             training_time_seconds=time.perf_counter() - started,
             effective_learning_rate=effective_learning_rate,
             semantic_warning=warning,
-            metadata=_evaluation_metadata(data, experiment, seed_info, seed),
+            metadata=evaluation_metadata,
         )
     except Exception as error:  # A failed candidate must not stop the colony.
         return EvaluationResult(
@@ -175,7 +187,10 @@ def evaluate_candidate(
             best_epoch=None,
             training_time_seconds=time.perf_counter() - started,
             failure_reason=f"{type(error).__name__}: {error}",
-            metadata=_evaluation_metadata(data, experiment, seed_info, seed),
+            metadata={
+                **_evaluation_metadata(data, experiment, seed_info, seed),
+                "actual_epochs_completed": None,
+            },
         )
 
 
@@ -187,6 +202,7 @@ def train_final_model(
     output_path: str,
 ) -> dict[str, Any]:
     """Train a new model on 60,000 development images and evaluate once on test."""
+    started = time.perf_counter()
     development_size = len(data.x_train) + len(data.x_validation)
     if development_size != 60_000:
         raise ValueError(
@@ -215,4 +231,5 @@ def train_final_model(
         "best_epoch": best_epoch,
         "effective_learning_rate": effective_learning_rate,
         "model_path": output_path,
+        "runtime_seconds": time.perf_counter() - started,
     }

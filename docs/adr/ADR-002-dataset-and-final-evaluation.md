@@ -10,7 +10,7 @@ ACO repeatedly evaluates candidate CNNs. Using the test set during search would 
 
 ## Decision
 
-Use a deterministic stratified 50,000/10,000 split from the official MNIST training set with dataset seed 2024. Use validation accuracy for ACO fitness. After tuning, retrain a new model on all 60,000 development images for the selected best epoch and evaluate once on the official 10,000-image test set.
+Use a deterministic stratified 50,000/10,000 split from the official MNIST training set with dataset seed 2024. Use validation accuracy for ACO fitness. After tuning, retrain a new model on all 60,000 development images for the selected best epoch and evaluate once on the official 10,000-image test set. The training set may be loaded from local IDX files; the split and test-use policy do not depend on the loading mechanism.
 
 ## Consequences
 

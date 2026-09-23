@@ -25,3 +25,15 @@ This project studies Ant Colony Optimization (ACO) for selecting CNN hyperparame
 The convolutional architecture is fixed by this project. ACO changes dense-layer widths, dropout values, batch size, activation, optimizer, loss where applicable, and learning rate in improved mode. It is not a general neural architecture search system.
 
 The test set is never used to calculate ACO fitness or select a configuration.
+
+## Primary computational budget
+
+The primary comparison uses `paper_conventional` and `improved`, with seeds
+42, 43, and 44, and a budget of 20 ants × 5 iterations × at most 5 epochs.
+The 20-ant count is explicit in the source paper; the iteration and epoch
+limits are implementation decisions because the paper does not specify them.
+The theoretical maximum is 600 tuning trial records across both modes and all
+seeds. Runtime calibration must be performed on the target hardware before
+primary/final execution; if the projected full workflow exceeds two hours,
+reduce epochs to 4 first and iterations to 4 second, while retaining 20 ants
+and all three seeds.

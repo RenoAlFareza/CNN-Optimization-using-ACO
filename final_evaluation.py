@@ -23,6 +23,8 @@ class FinalEvaluationResult:
     mode_results: list[dict[str, Any]] = field(default_factory=list)
     test_evaluations: int = 0
     runtime_seconds: float = 0.0
+    primary_runtime_seconds: float = 0.0
+    total_workflow_runtime_seconds: float = 0.0
     output_path: str | None = None
     failure_reason: str = ""
 
@@ -88,6 +90,8 @@ def _write_report(result: FinalEvaluationResult, output_dir: Path) -> str:
                 "status": result.status,
                 "test_evaluations": result.test_evaluations,
                 "runtime_seconds": result.runtime_seconds,
+                "primary_runtime_seconds": result.primary_runtime_seconds,
+                "total_workflow_runtime_seconds": result.total_workflow_runtime_seconds,
                 "failure_reason": result.failure_reason,
                 "mode_results": result.mode_results,
                 "environment": environment_metadata(),
@@ -116,11 +120,17 @@ def run_final_evaluations(
     started = time.perf_counter()
     root = Path(output_dir)
     result = FinalEvaluationResult(status="success")
+    result.primary_runtime_seconds = float(
+        report.runtime_summary.get("primary_runtime_seconds", 0.0)
+    )
 
     if not report.mode_results or any(item.aggregate is None for item in report.mode_results):
         result.status = "failed"
         result.failure_reason = "No valid aggregate configuration is available for final retraining"
         result.runtime_seconds = time.perf_counter() - started
+        result.total_workflow_runtime_seconds = (
+            result.primary_runtime_seconds + result.runtime_seconds
+        )
         _write_report(result, root)
         return result
 
@@ -139,6 +149,7 @@ def run_final_evaluations(
             seed_record: dict[str, Any] = {
                 "seed": seed_run.seed,
                 "run_id": seed_run.run_id,
+                "runtime_seconds": 0.0,
                 "status": "success",
                 "test_evaluation_performed": False,
             }
@@ -179,6 +190,9 @@ def run_final_evaluations(
                     str(model_path),
                 )
                 seed_record.update(final_metrics)
+                seed_record["runtime_seconds"] = float(
+                    final_metrics.get("runtime_seconds", 0.0)
+                )
                 seed_record["test_evaluation_performed"] = True
                 result.test_evaluations += 1
             except Exception as error:
@@ -190,6 +204,9 @@ def run_final_evaluations(
         result.mode_results.append(mode_record)
 
     result.runtime_seconds = time.perf_counter() - started
+    result.total_workflow_runtime_seconds = (
+        result.primary_runtime_seconds + result.runtime_seconds
+    )
     if result.status == "failed" and not result.failure_reason:
         result.failure_reason = "One or more final seed evaluations failed"
     _write_report(result, root)

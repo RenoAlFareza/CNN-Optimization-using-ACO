@@ -67,11 +67,45 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Run primary validation search, then retrain and test final models.",
     )
+    parser.add_argument(
+        "--calibrate-runtime",
+        action="store_true",
+        help="Run a small real-CNN runtime calibration on each primary mode.",
+    )
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
+    if args.calibrate_runtime:
+        if args.synthetic:
+            raise ValueError("--calibrate-runtime requires real CNN training")
+        from runtime_calibration import run_runtime_calibration
+
+        result = run_runtime_calibration(
+            data_dir=args.data_dir,
+            output_dir=args.output_dir,
+            calibration_budget=budget_values("pilot"),
+            primary_budget=budget_values("main"),
+        )
+        print(f"calibration_report={result['report_path']}")
+        print(f"estimated_full_workflow_seconds={result['estimate']['full_workflow_total_seconds']:.1f}")
+        return
+    if args.primary or args.final:
+        calibration_path = Path(args.output_dir) / "runtime_calibration" / "runtime_calibration_report.json"
+        if not calibration_path.is_file():
+            raise ValueError(
+                "Run --calibrate-runtime on the target hardware first; "
+                f"missing report: {calibration_path}"
+            )
+        calibration = json.loads(calibration_path.read_text(encoding="utf-8"))
+        estimate_seconds = calibration["estimate"]["full_workflow_total_seconds"]
+        if estimate_seconds > 2 * 60 * 60:
+            raise ValueError(
+                "Calibrated full workflow exceeds the two-hour target "
+                f"({estimate_seconds / 3600:.2f} hours). Reduce max_epochs to 4 "
+                "first, then iterations to 4, and recalibrate before --final."
+            )
     if args.analyze:
         from analysis_report import analyze_experiment
 
@@ -191,6 +225,40 @@ def main() -> None:
                 "trial_count": len(optimizer.trial_rows),
                 "failed_trials": sum(row["status"] == "failed" for row in optimizer.trial_rows),
                 "cache_hits": sum(bool(row["cache_hit"]) for row in optimizer.trial_rows),
+                "runtime_summary": {
+                    "trial_runtime_seconds": [
+                        row["training_time_seconds"] for row in optimizer.trial_rows
+                    ],
+                    "mean_candidate_runtime_seconds": sum(
+                        row["training_time_seconds"]
+                        for row in optimizer.trial_rows
+                        if not row["cache_hit"]
+                    )
+                    / max(1, sum(not row["cache_hit"] for row in optimizer.trial_rows)),
+                    "median_candidate_runtime_seconds": sorted(
+                        row["training_time_seconds"]
+                        for row in optimizer.trial_rows
+                        if not row["cache_hit"]
+                    )[max(0, (sum(not row["cache_hit"] for row in optimizer.trial_rows) - 1) // 2)]
+                    if any(not row["cache_hit"] for row in optimizer.trial_rows)
+                    else 0.0,
+                    "actual_epochs_completed": [
+                        row.get("actual_epochs_completed")
+                        for row in optimizer.trial_rows
+                    ],
+                    "cache_hit_rate": (
+                        sum(bool(row["cache_hit"]) for row in optimizer.trial_rows)
+                        / len(optimizer.trial_rows)
+                        if optimizer.trial_rows
+                        else 0.0
+                    ),
+                    "failed_trial_rate": (
+                        sum(row["status"] == "failed" for row in optimizer.trial_rows)
+                        / len(optimizer.trial_rows)
+                        if optimizer.trial_rows
+                        else 0.0
+                    ),
+                },
             },
             indent=2,
         ),

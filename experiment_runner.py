@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import platform
 import time
+from statistics import median
 from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Any, Callable, Iterable
@@ -12,6 +13,7 @@ from typing import Any, Callable, Iterable
 from aco_optimizer import ACOOptimizer, Evaluator
 from config import ExperimentConfig, family_for_mode, get_search_space, mode_interpretation
 from evaluation_contract import EvaluationResult
+from evaluator import environment_metadata as evaluator_environment_metadata
 
 
 DEFAULT_PRIMARY_MODES = ("paper_conventional", "improved")
@@ -20,21 +22,12 @@ DEFAULT_PRIMARY_SEEDS = (42, 43, 44)
 
 def environment_metadata() -> dict[str, str]:
     import numpy as np
-
-    metadata = {
+    return {
         "python_version": platform.python_version(),
         "platform": platform.platform(),
         "numpy_version": np.__version__,
+        **evaluator_environment_metadata(),
     }
-    try:
-        import tensorflow as tf
-
-        metadata["tensorflow_version"] = tf.__version__
-        metadata["keras_version"] = str(tf.keras.__version__)
-    except (ImportError, AttributeError):
-        metadata["tensorflow_version"] = "unavailable"
-        metadata["keras_version"] = "unavailable"
-    return metadata
 
 
 def _failed_result(error: Exception) -> EvaluationResult:
@@ -48,6 +41,33 @@ def _failed_result(error: Exception) -> EvaluationResult:
         training_time_seconds=0.0,
         failure_reason=f"{type(error).__name__}: {error}",
     )
+
+
+def _run_runtime_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    trained_rows = [row for row in rows if not row["cache_hit"]]
+    durations = [float(row["training_time_seconds"]) for row in trained_rows]
+    epoch_counts = [
+        int(row["actual_epochs_completed"])
+        for row in trained_rows
+        if row.get("actual_epochs_completed") is not None
+    ]
+    return {
+        "trial_runtime_seconds": [float(row["training_time_seconds"]) for row in rows],
+        "mean_candidate_runtime_seconds": sum(durations) / len(durations) if durations else 0.0,
+        "median_candidate_runtime_seconds": median(durations) if durations else 0.0,
+        "actual_epochs_completed": epoch_counts,
+        "mean_actual_epochs_completed": (
+            sum(epoch_counts) / len(epoch_counts) if epoch_counts else None
+        ),
+        "cache_hit_rate": (
+            sum(bool(row["cache_hit"]) for row in rows) / len(rows) if rows else 0.0
+        ),
+        "failed_trial_rate": (
+            sum(row["status"] == "failed" for row in rows) / len(rows)
+            if rows
+            else 0.0
+        ),
+    }
 
 
 @dataclass
@@ -70,14 +90,15 @@ class SeedRunResult:
     failure_reason: str = ""
     budget_name: str = "main"
     effective_ants: int = 20
-    effective_iterations: int = 20
-    effective_max_epochs: int = 10
+    effective_iterations: int = 5
+    effective_max_epochs: int = 5
     best_fitness: float | None = None
     best_training_accuracy: float | None = None
     best_training_time_seconds: float | None = None
     best_effective_learning_rate: float | None = None
     best_semantic_warning: str = ""
     best_metadata: dict[str, Any] = field(default_factory=dict)
+    runtime_summary: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -137,11 +158,12 @@ class ModeExperimentResult:
     aggregate_cache_hits: int = 0
     budget_name: str = "main"
     effective_ants: int = 20
-    effective_iterations: int = 20
-    effective_max_epochs: int = 10
+    effective_iterations: int = 5
+    effective_max_epochs: int = 5
     aggregate_status: str = "success"
     aggregate_failure_reason: str = ""
     confirmation_evaluations: list[dict[str, Any]] = field(default_factory=list)
+    runtime_summary: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -156,6 +178,7 @@ class ExperimentReport:
     )
     evaluator_type: str = "cnn_mnist"
     environment: dict[str, str] = field(default_factory=environment_metadata)
+    runtime_summary: dict[str, Any] = field(default_factory=dict)
 
 
 def _aggregate_sort_key(candidate: AggregateCandidate) -> tuple[float, float, float, str]:
@@ -255,6 +278,40 @@ def _run_one_seed(
                         "cache_hits": sum(
                             bool(row["cache_hit"]) for row in optimizer.trial_rows
                         ),
+                        "effective_ants": budget["ants"],
+                        "effective_iterations": budget["iterations"],
+                        "effective_max_epochs": budget["max_epochs"],
+                        "candidate_runtime_seconds": [
+                            row["training_time_seconds"]
+                            for row in optimizer.trial_rows
+                        ],
+                        "median_candidate_runtime_seconds": float(
+                            median(
+                                [
+                                    row["training_time_seconds"]
+                                    for row in optimizer.trial_rows
+                                    if not row["cache_hit"]
+                                ]
+                            )
+                        )
+                        if any(not row["cache_hit"] for row in optimizer.trial_rows)
+                        else 0.0,
+                        "mean_candidate_runtime_seconds": sum(
+                            row["training_time_seconds"]
+                            for row in optimizer.trial_rows
+                            if not row["cache_hit"]
+                        )
+                        / max(
+                            1,
+                            sum(not row["cache_hit"] for row in optimizer.trial_rows),
+                        ),
+                        "actual_epochs_completed": [
+                            row.get("actual_epochs_completed")
+                            for row in optimizer.trial_rows
+                        ],
+                        "runtime_summary": _run_runtime_summary(
+                            optimizer.trial_rows
+                        ),
                         "environment": environment_metadata(),
                     },
                     indent=2,
@@ -294,6 +351,7 @@ def _run_one_seed(
         effective_ants=budget["ants"],
         effective_iterations=budget["iterations"],
         effective_max_epochs=budget["max_epochs"],
+        runtime_summary=_run_runtime_summary(rows),
     )
     return seed_result, optimizer.evaluation_results
 
@@ -358,6 +416,9 @@ def _confirm_candidates(
                     "validation_loss": result.validation_loss,
                     "training_time_seconds": result.training_time_seconds,
                     "best_epoch": result.best_epoch,
+                    "actual_epochs_completed": (result.metadata or {}).get(
+                        "actual_epochs_completed"
+                    ),
                     "failure_reason": result.failure_reason,
                     "effective_learning_rate": result.effective_learning_rate,
                     "semantic_warning": result.semantic_warning,
@@ -415,6 +476,7 @@ def write_report(report: ExperimentReport, output_dir: str) -> str:
         "comparison_note": report.comparison_note,
         "evaluator_type": report.evaluator_type,
         "environment": report.environment,
+        "runtime_summary": report.runtime_summary,
         "mode_results": [
             {
                 "mode": result.mode,
@@ -425,6 +487,7 @@ def write_report(report: ExperimentReport, output_dir: str) -> str:
                 "aggregate_candidate_count": result.aggregate_candidate_count,
                 "aggregate_evaluation_count": result.aggregate_evaluation_count,
                 "aggregate_runtime_seconds": result.aggregate_runtime_seconds,
+                "runtime_summary": result.runtime_summary,
                 "aggregate_failed_trials": result.aggregate_failed_trials,
                 "aggregate_cache_hits": result.aggregate_cache_hits,
                 "budget_name": result.budget_name,
@@ -463,13 +526,13 @@ def run_primary_experiments(
         raise ValueError("At least one mode and one seed are required")
     if evaluator_factory is None:
         raise ValueError("Primary experiment requires an evaluator_factory")
-    budget = budget or {"ants": 20, "iterations": 20, "max_epochs": 10}
+    budget = budget or {"ants": 20, "iterations": 5, "max_epochs": 5}
     if tuple(modes) != DEFAULT_PRIMARY_MODES:
         raise ValueError("Primary experiment requires paper_conventional and improved modes")
     if tuple(seeds) != DEFAULT_PRIMARY_SEEDS:
         raise ValueError("Primary experiment requires seeds 42, 43, and 44")
-    if budget != {"ants": 20, "iterations": 20, "max_epochs": 10}:
-        raise ValueError("Primary experiment requires the main 20x20x10 budget")
+    if budget != {"ants": 20, "iterations": 5, "max_epochs": 5}:
+        raise ValueError("Primary experiment requires the main 20x5x5 budget")
     if budget_name != "main":
         raise ValueError("Primary experiment requires budget_name='main'")
     return _run_experiment_plan(
@@ -553,6 +616,37 @@ def _run_experiment_plan(
             cache_enabled,
             seed_caches,
         )
+        seed_runtimes = [run.runtime_seconds for run in seed_runs]
+        mode_runtime_summary = {
+            "seed_runtime_seconds": {
+                str(run.seed): run.runtime_seconds for run in seed_runs
+            },
+            "seed_runtime_total_seconds": sum(seed_runtimes),
+            "tuning_trial_count": sum(run.trial_count for run in seed_runs),
+            "tuning_cache_hits": sum(run.cache_hits for run in seed_runs),
+            "tuning_failed_trials": sum(run.failed_trials for run in seed_runs),
+            "aggregate_confirmation_runtime_seconds": aggregate_runtime_seconds,
+            "aggregate_confirmation_evaluation_count": aggregate_evaluation_count,
+            "aggregate_confirmation_cache_hits": aggregate_cache_hits,
+            "aggregate_confirmation_failed_trials": aggregate_failed_trials,
+            "aggregate_confirmation_cache_hit_rate": (
+                aggregate_cache_hits / aggregate_evaluation_count
+                if aggregate_evaluation_count
+                else 0.0
+            ),
+            "aggregate_confirmation_failed_trial_rate": (
+                aggregate_failed_trials / aggregate_evaluation_count
+                if aggregate_evaluation_count
+                else 0.0
+            ),
+            "confirmation_candidate_runtime_seconds": [
+                float(record["training_time_seconds"])
+                for record in confirmation_evaluations
+                if not record.get("cache_hit")
+            ],
+            "mode_total_runtime_seconds": sum(seed_runtimes)
+            + aggregate_runtime_seconds,
+        }
         mode_results.append(
             ModeExperimentResult(
                 mode=mode,
@@ -576,13 +670,46 @@ def _run_experiment_plan(
                     else ""
                 ),
                 confirmation_evaluations=confirmation_evaluations,
+                runtime_summary=mode_runtime_summary,
             )
         )
 
+    runtime_summary = {
+        "mode_runtime_seconds": {
+            result.mode: result.runtime_summary["mode_total_runtime_seconds"]
+            for result in mode_results
+        },
+        "tuning_runtime_seconds": sum(
+            result.runtime_summary["seed_runtime_total_seconds"]
+            for result in mode_results
+        ),
+        "aggregate_confirmation_runtime_seconds": sum(
+            result.aggregate_runtime_seconds for result in mode_results
+        ),
+        "primary_runtime_seconds": sum(
+            result.runtime_summary["mode_total_runtime_seconds"]
+            for result in mode_results
+        ),
+        "candidate_evaluation_count": sum(
+            run.trial_count for result in mode_results for run in result.seed_runs
+        ),
+        "confirmation_evaluation_count": sum(
+            result.aggregate_evaluation_count for result in mode_results
+        ),
+        "cache_hits": sum(
+            run.cache_hits for result in mode_results for run in result.seed_runs
+        )
+        + sum(result.aggregate_cache_hits for result in mode_results),
+        "failed_trials": sum(
+            run.failed_trials for result in mode_results for run in result.seed_runs
+        )
+        + sum(result.aggregate_failed_trials for result in mode_results),
+    }
     report = ExperimentReport(
         mode_results=mode_results,
         evaluator_type=evaluator_type,
         environment=environment_metadata(),
+        runtime_summary=runtime_summary,
     )
     if output_dir:
         write_report(report, output_dir)

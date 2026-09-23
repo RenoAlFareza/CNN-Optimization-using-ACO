@@ -57,8 +57,8 @@ IMPROVED_SEARCH_SPACE: dict[str, list[Any]] = {
 
 EXPERIMENT_BUDGETS: dict[str, dict[str, int]] = {
     "smoke": {"ants": 2, "iterations": 2, "max_epochs": 2},
-    "pilot": {"ants": 10, "iterations": 10, "max_epochs": 10},
-    "main": {"ants": 20, "iterations": 20, "max_epochs": 10},
+    "pilot": {"ants": 20, "iterations": 1, "max_epochs": 5},
+    "main": {"ants": 20, "iterations": 5, "max_epochs": 5},
     "diagnostic": {"ants": 20, "iterations": 50, "max_epochs": 10},
 }
 

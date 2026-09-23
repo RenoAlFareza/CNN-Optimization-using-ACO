@@ -133,6 +133,17 @@ def _final_summary(final: dict[str, Any]) -> dict[str, Any]:
         "status": final.get("status", "not_present"),
         "test_evaluations": final.get("test_evaluations", 0),
         "runtime_seconds": final.get("runtime_seconds", 0.0),
+        "primary_runtime_seconds": final.get("primary_runtime_seconds", 0.0),
+        "total_workflow_runtime_seconds": final.get(
+            "total_workflow_runtime_seconds", 0.0
+        ),
+        "per_seed_runtime_seconds": {
+            f"{mode_result.get('mode')}/seed_{seed_result.get('seed')}": seed_result.get(
+                "runtime_seconds", 0.0
+            )
+            for mode_result in final.get("mode_results", [])
+            for seed_result in mode_result.get("seed_results", [])
+        },
         "failed_seeds": sum(item.get("status") == "failed" for item in seed_results),
         "test_accuracies": {
             f"{mode_result.get('mode')}/seed_{seed_result.get('seed')}": seed_result.get("test_accuracy")
@@ -150,6 +161,8 @@ def _methodological_notes(primary: dict[str, Any]) -> list[str]:
         "Development decisions: fixed CNN architecture, deterministic 50,000/10,000 validation split, validation fitness, caching, early stopping, repeated seeds, and untouched final test evaluation.",
         "Smoke and pilot runs validate implementation behavior and are not primary scientific results.",
         "paper_conventional versus improved is a pipeline comparison, not a controlled pheromone-update ablation, because their search spaces differ.",
+        "Budget provenance: 20 ants follows the explicit journal setting; the selected iteration count and maximum epoch count are project computational-budget decisions because the article does not specify them.",
+        "The reduced budget targets a feasible reproducible three-seed experiment on available hardware; it does not claim literal replication of the article's runtime.",
     ]
     comparison_note = primary.get("comparison_note")
     if comparison_note:
@@ -256,6 +269,15 @@ def _summary(trials: list[dict[str, Any]], primary: dict[str, Any]) -> dict[str,
             item.get("aggregate_runtime_seconds", 0.0)
             for item in primary.get("mode_results", [])
         ),
+        "primary_runtime_seconds": primary.get("runtime_summary", {}).get(
+            "primary_runtime_seconds", 0.0
+        ),
+        "primary_candidate_evaluation_count": primary.get("runtime_summary", {}).get(
+            "candidate_evaluation_count", len(trials)
+        ),
+        "primary_confirmation_evaluation_count": primary.get(
+            "runtime_summary", {}
+        ).get("confirmation_evaluation_count", 0),
         "best_validation_accuracy": max(
             (row["validation_accuracy_number"] for row in valid), default=None
         ),
@@ -419,6 +441,11 @@ def _write_markdown(root: Path, summary: dict[str, Any], notes: list[str], prima
     lines.extend(["", "## Environment and protocol", ""])
     lines.append(f"- Evaluator type: `{summary['evaluator_type']}`. Runs remain grouped by budget-aware `run_id` in the summary and source logs.")
     lines.append(f"- Search runtime across mode/seed runs: `{summary.get('runtime_seconds', 0.0)}` seconds.")
+    lines.append(
+        f"- Primary workflow runtime (tuning plus confirmation): `{summary.get('primary_runtime_seconds', 0.0)}` seconds; "
+        f"candidate evaluations: `{summary.get('primary_candidate_evaluation_count', 0)}`; "
+        f"confirmation evaluations: `{summary.get('primary_confirmation_evaluation_count', 0)}`."
+    )
     for name, value in sorted(summary.get("environment", {}).items()):
         lines.append(f"- {name}: `{value}`")
     lines.append(

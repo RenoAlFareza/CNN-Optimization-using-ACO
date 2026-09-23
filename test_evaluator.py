@@ -40,8 +40,8 @@ class _Layer:
 class _FakeModel:
     def __init__(self, history: dict[str, list[float]] | None = None, fit_error: Exception | None = None) -> None:
         self.history = history or {
-            "sparse_categorical_accuracy": [0.70, 0.80, 0.81],
-            "val_sparse_categorical_accuracy": [0.60, 0.80, 0.80],
+            "accuracy": [0.70, 0.80, 0.81],
+            "val_accuracy": [0.60, 0.80, 0.80],
             "val_loss": [0.90, 0.30, 0.40],
         }
         self.fit_error = fit_error
@@ -181,6 +181,7 @@ class DatasetAndModelTests(unittest.TestCase):
             "Flatten", "BatchNormalization", "Dense", "Dropout", "Dense", "Dense",
         ])
         self.assertEqual(model.compile_kwargs["loss"], "sparse_categorical_crossentropy")
+        self.assertEqual(model.compile_kwargs["metrics"], ["accuracy"])
         self.assertEqual(learning_rate, 0.01)
 
     def test_evaluate_candidate_records_best_epoch_and_metadata(self) -> None:
@@ -211,13 +212,14 @@ class DatasetAndModelTests(unittest.TestCase):
         self.assertEqual(result.fitness, 0.80)
         self.assertEqual(result.validation_loss, 0.30)
         self.assertEqual(result.best_epoch, 2)
+        self.assertEqual(result.metadata["actual_epochs_completed"], 3)
         self.assertEqual(result.train_accuracy, 0.80)
         self.assertEqual(result.effective_learning_rate, 0.01)
         self.assertEqual(result.metadata["split_id"], "split-test")
         self.assertEqual(result.metadata["mode_interpretation"], "project_improvement")
         self.assertEqual(result.metadata["determinism_effective"], True)
         self.assertEqual(model.fit_kwargs["callbacks"][0].kwargs, {
-            "monitor": "val_sparse_categorical_accuracy",
+            "monitor": "val_accuracy",
             "mode": "max",
             "patience": 2,
             "min_delta": 0.0,

@@ -73,6 +73,11 @@ class ExperimentRunnerTests(unittest.TestCase):
         self.assertTrue(
             all(result.aggregate_failed_trials == 0 for result in report.mode_results)
         )
+        self.assertEqual(report.runtime_summary["candidate_evaluation_count"], 6)
+        self.assertIn("primary_runtime_seconds", report.runtime_summary)
+        self.assertTrue(
+            all("mean_candidate_runtime_seconds" in run.runtime_summary for result in report.mode_results for run in result.seed_runs)
+        )
 
     def test_aggregate_candidates_are_evaluated_on_every_seed_before_selection(self) -> None:
         evaluations: list[tuple[str, int]] = []
@@ -184,6 +189,13 @@ class ExperimentRunnerTests(unittest.TestCase):
     def test_primary_runner_requires_an_evaluator_factory(self) -> None:
         with self.assertRaisesRegex(ValueError, "requires an evaluator_factory"):
             run_primary_experiments(evaluator_factory=None)
+
+    def test_primary_runner_rejects_budget_other_than_20_by_5_by_5(self) -> None:
+        with self.assertRaisesRegex(ValueError, "20x5x5"):
+            run_primary_experiments(
+                evaluator_factory=lambda _experiment: lambda _configuration, _config: successful_result(0.8, 0.2),
+                budget={"ants": 20, "iterations": 4, "max_epochs": 5},
+            )
 
 
 if __name__ == "__main__":

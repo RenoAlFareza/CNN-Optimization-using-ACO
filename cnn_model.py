@@ -68,7 +68,7 @@ def build_model(configuration: dict[str, Any], mode: str):
     model.compile(
         optimizer=optimizer,
         loss=loss,
-        metrics=["sparse_categorical_accuracy"],
+        metrics=["accuracy"],
     )
     learning_rate = optimizer.learning_rate
     try:

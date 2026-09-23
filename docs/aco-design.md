@@ -27,7 +27,7 @@ This is an explicit project design, not a claim that the article specifies these
 
 ## Dataset protocol
 
-MNIST is loaded from the TensorFlow/Keras dataset API. The official 60,000 training images are split once, stratified and deterministically using `dataset_seed = 2024`, into 50,000 training and 10,000 validation images. The official 10,000-image test set remains untouched until final evaluation.
+MNIST is loaded from the local IDX files in `data/` (or the CLI `--data-dir`). The official 60,000 training images are split once, stratified and deterministically using `dataset_seed = 2024`, into 50,000 training and 10,000 validation images. The official 10,000-image test set remains untouched until final evaluation.
 
 ## Search spaces
 
@@ -90,7 +90,7 @@ Q = 1.0
 
 ## Training and selection
 
-Candidate fitness is validation accuracy. Early stopping monitors validation accuracy with `patience = 2`, restores best weights, and records `best_epoch`; validation-loss and training-time tie-breaks make selection deterministic. Failed trials have no fitness and do not reinforce pheromone. Cached successful results are valid trials and can reinforce according to the active mode.
+Candidate fitness is validation accuracy. Early stopping monitors Keras `val_accuracy` with `mode = max`, `patience = 2`, `min_delta = 0.0`, and `restore_best_weights = True`, and records `best_epoch` and actual epochs completed; validation-loss and training-time tie-breaks make selection deterministic. Failed trials have no fitness and do not reinforce pheromone. Cached successful results are valid trials and can reinforce according to the active mode.
 
 Trial and pheromone logs include the requested budget name, effective ant/iteration/epoch counts, and run-level status (`success` or `failed`). This keeps CLI budget overrides auditable.
 
@@ -100,14 +100,18 @@ Paper modes use each optimizer's framework default learning rate. Improved mode 
 
 ```text
 Smoke:    2 ants x 2 iterations x 2 max epochs
-Pilot:   10 ants x 10 iterations x 10 max epochs
-Main:    20 ants x 20 iterations x 10 max epochs, seeds 42/43/44
+Pilot:   20 ants x 1 iteration x 5 max epochs, seed 42 per primary mode for runtime calibration
+Main:    20 ants x 5 iterations x 5 max epochs, seeds 42/43/44
 Diagnostic: 20 ants x 50 iterations x 10 max epochs, optional for paper-literal
 ```
 
+Twenty ants follows the explicit ant count in the article. The five-iteration and five-epoch limits are project computational-budget decisions: the article does not specify either value. The reduced main budget targets a feasible, reproducible multi-seed experiment on available hardware; it is not a claim to reproduce the paper's runtime literally. Run `--calibrate-runtime` on the target GPU before the full primary/final workflow. The calibration report estimates candidate, seed, mode, confirmation, final-evaluation, and total workflow runtime. If its projected full-workflow runtime exceeds two hours, lower the epoch limit to four first, then the iteration limit to four; keep 20 ants and three seeds. If it is substantially below two hours, do not increase iterations until the estimate is reviewed.
+
 The primary comparison is `paper_conventional` versus `improved`. `paper_literal` is diagnostic unless resources permit a supplementary three-seed run.
 
-The repeated-run runner executes both primary modes for seeds 42, 43, and 44 using the main budget, then confirms every per-seed global-best candidate on every seed using validation results only. Its report records per-seed and aggregate runtime, failed trials, cache hits, effective budget, configuration metadata, and the explicit pipeline-comparison caveat. It does not accept a test evaluator; final test evaluation belongs to the final-retraining stage.
+The repeated-run runner executes both primary modes for seeds 42, 43, and 44 using the main budget, then confirms every per-seed global-best candidate on every seed using validation results only. Its report records per-candidate, per-seed, per-mode, and primary-total runtime; failed trials; cache hits; effective budget; configuration metadata; and the explicit pipeline-comparison caveat. It does not accept a test evaluator; final test evaluation belongs to the final-retraining stage. Candidate logs include actual epochs completed when training history provides them.
+
+The `--calibrate-runtime` command runs 20 candidates for one iteration on each primary mode with seed 42 and cache enabled. Its JSON report records candidate mean/median runtime, actual epochs, cache-hit and failure rates, detected GPU devices (utilization is marked not sampled), and estimates for tuning, aggregate confirmation, six final models, and total workflow. `--primary` and `--final` require this report in the output directory and refuse to start if projected total runtime exceeds two hours. This gate prevents an uncalibrated long run; it does not guarantee runtime under workload variation.
 
 The analysis tool reads trial/pheromone CSVs and the primary/final JSON reports, then writes `analysis_report.md`, `analysis_summary.json`, and four plots: convergence, pheromone evolution, probability evolution, and runtime/trial outcomes. It preserves the evaluator type (`synthetic` versus `cnn_mnist`) and explicitly states that smoke/pilot outputs are implementation validation rather than primary scientific results.
 

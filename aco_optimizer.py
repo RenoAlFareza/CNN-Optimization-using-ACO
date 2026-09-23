@@ -203,6 +203,9 @@ class ACOOptimizer:
             "validation_accuracy": result.validation_accuracy,
             "validation_loss": result.validation_loss,
             "best_epoch": result.best_epoch,
+            "actual_epochs_completed": (result.metadata or {}).get(
+                "actual_epochs_completed"
+            ),
             "training_time_seconds": result.training_time_seconds,
             "status": result.status,
             "failure_reason": result.failure_reason,

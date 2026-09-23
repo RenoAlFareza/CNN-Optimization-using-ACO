@@ -1,5 +1,0 @@
-run_id,mode,family,seed,iteration,ant_id,candidate_id,dense_units_1,dense_units_2,dropout_1,dropout_2,batch_size,activation,optimizer,loss,fitness,train_accuracy,validation_accuracy,validation_loss,best_epoch,training_time_seconds,status,failure_reason,semantic_warning,effective_learning_rate,cache_hit,is_iteration_best,is_global_best
-paper_literal-seed-42,paper_literal,paper_faithful,42,1,1,f1f4131008257cd2,1024,128,0.7,0.6,16,linear,ftrl,categorical_hinge,0.5,0.51,0.5,0.5,1,0.0,success,,,,False,True,True
-paper_literal-seed-42,paper_literal,paper_faithful,42,1,2,d301f68531c905e6,32,128,0.4,0.8,256,linear,adadelta,categorical_crossentropy,0.5,0.51,0.5,0.5,1,0.0,success,,,,False,False,False
-paper_literal-seed-42,paper_literal,paper_faithful,42,2,1,f35ed5094c94fda0,256,16,0.7,0.6,512,softsign,nadam,categorical_hinge,0.5,0.51,0.5,0.5,1,0.0,success,,,,False,True,False
-paper_literal-seed-42,paper_literal,paper_faithful,42,2,2,4e61ced5f9e1314f,1024,16,0.5,0.1,16,gelu,ftrl,cosine_similarity,0.5,0.51,0.5,0.5,1,0.0,success,,,,False,False,False

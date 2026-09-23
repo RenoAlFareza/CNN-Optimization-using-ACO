@@ -1,0 +1,22 @@
+# Python-generated files
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+
+# Local agent/workspace metadata
+.kilo/
+.scratch/
+AGENTS.md
+docs/agents/
+
+# Local experiment outputs and trained models
+experiments/
+*.keras
+*.h5
+
+# Local environments and secrets
+.venv/
+venv/
+env/
+.env

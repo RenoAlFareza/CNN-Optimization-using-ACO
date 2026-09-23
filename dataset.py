@@ -1,8 +1,10 @@
-"""MNIST loading and deterministic stratified splitting."""
+"""Local MNIST IDX loading and deterministic stratified splitting."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
+import struct
 from typing import Any
 
 import numpy as np
@@ -39,17 +41,108 @@ def _stratified_indices(labels: np.ndarray, validation_size: int, seed: int) -> 
     return np.asarray(train_indices), np.asarray(validation_indices)
 
 
-def load_mnist(dataset_seed: int = 2024) -> DatasetBundle:
-    """Load MNIST through Keras and create the fixed 50k/10k/10k split."""
-    try:
-        from tensorflow.keras.datasets import mnist
-    except ImportError as error:
-        raise RuntimeError(
-            "TensorFlow is required to load MNIST. Install it with "
-            "`pip install tensorflow` before running a CNN experiment."
-        ) from error
+def _find_file(data_dir: Path, names: tuple[str, ...], description: str) -> Path:
+    candidates = [data_dir / name for name in names]
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    expected = " or ".join(str(path) for path in candidates)
+    raise FileNotFoundError(
+        f"Could not find MNIST {description}. Expected one of: {expected}"
+    )
 
-    (x_full, y_full), (x_test, y_test) = mnist.load_data()
+
+def _read_idx_labels(path: Path) -> np.ndarray:
+    with path.open("rb") as file:
+        header = file.read(8)
+        if len(header) != 8:
+            raise ValueError(f"MNIST label file is truncated: {path}")
+        magic, size = struct.unpack(">II", header)
+        if magic != 2049:
+            raise ValueError(f"Invalid MNIST label magic number in {path}: {magic}")
+        labels = np.frombuffer(file.read(), dtype=np.uint8)
+    if len(labels) != size:
+        raise ValueError(
+            f"MNIST label count mismatch in {path}: header={size}, data={len(labels)}"
+        )
+    return labels
+
+
+def _read_idx_images(path: Path) -> np.ndarray:
+    with path.open("rb") as file:
+        header = file.read(16)
+        if len(header) != 16:
+            raise ValueError(f"MNIST image file is truncated: {path}")
+        magic, size, rows, columns = struct.unpack(">IIII", header)
+        if magic != 2051:
+            raise ValueError(f"Invalid MNIST image magic number in {path}: {magic}")
+        image_data = np.frombuffer(file.read(), dtype=np.uint8)
+    expected_size = size * rows * columns
+    if len(image_data) != expected_size:
+        raise ValueError(
+            f"MNIST image count mismatch in {path}: header={expected_size}, "
+            f"data={len(image_data)}"
+        )
+    return image_data.reshape(size, rows, columns)
+
+
+def _load_idx_dataset(data_dir: Path) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    train_images_path = _find_file(
+        data_dir,
+        (
+            "train-images.idx3-ubyte",
+            "train-images-idx3-ubyte/train-images-idx3-ubyte",
+            "train-images-idx3-ubyte",
+        ),
+        "training images",
+    )
+    train_labels_path = _find_file(
+        data_dir,
+        (
+            "train-labels.idx1-ubyte",
+            "train-labels-idx1-ubyte/train-labels-idx1-ubyte",
+            "train-labels-idx1-ubyte",
+        ),
+        "training labels",
+    )
+    test_images_path = _find_file(
+        data_dir,
+        (
+            "t10k-images.idx3-ubyte",
+            "t10k-images-idx3-ubyte/t10k-images-idx3-ubyte",
+            "t10k-images-idx3-ubyte",
+        ),
+        "test images",
+    )
+    test_labels_path = _find_file(
+        data_dir,
+        (
+            "t10k-labels.idx1-ubyte",
+            "t10k-labels-idx1-ubyte/t10k-labels-idx1-ubyte",
+            "t10k-labels-idx1-ubyte",
+        ),
+        "test labels",
+    )
+    x_train = _read_idx_images(train_images_path)
+    y_train = _read_idx_labels(train_labels_path)
+    x_test = _read_idx_images(test_images_path)
+    y_test = _read_idx_labels(test_labels_path)
+    if len(x_train) != len(y_train):
+        raise ValueError("MNIST training image and label counts do not match")
+    if len(x_test) != len(y_test):
+        raise ValueError("MNIST test image and label counts do not match")
+    return x_train, y_train, x_test, y_test
+
+
+def load_mnist(dataset_seed: int = 2024, data_dir: str | Path = "data") -> DatasetBundle:
+    """Load local MNIST IDX files and create the fixed 50k/10k/10k split."""
+    data_path = Path(data_dir).expanduser()
+    x_full, y_full, x_test, y_test = _load_idx_dataset(data_path)
+    if len(x_full) != 60_000 or len(x_test) != 10_000:
+        raise ValueError(
+            "This experiment requires the standard MNIST sizes: "
+            "60,000 training images and 10,000 test images"
+        )
     train_indices, validation_indices = _stratified_indices(
         y_full, validation_size=10_000, seed=dataset_seed
     )

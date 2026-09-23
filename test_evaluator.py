@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import sys
+import struct
 import types
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 import numpy as np
@@ -123,13 +126,25 @@ class DatasetAndModelTests(unittest.TestCase):
         labels = np.tile(np.arange(10, dtype=np.int64), 6000)
         images = np.zeros((60000, 28, 28), dtype=np.uint8)
         test_images = np.zeros((10000, 28, 28), dtype=np.uint8)
-        mnist = types.SimpleNamespace(load_data=lambda: ((images, labels), (test_images, labels[:10000])))
-        tf = _tensorflow_double()
-        tf.keras.datasets = types.SimpleNamespace(mnist=mnist)
 
-        with _module_patch(tf):
-            first = load_mnist()
-            second = load_mnist()
+        def write_images(path: Path, values: np.ndarray) -> None:
+            with path.open("wb") as file:
+                file.write(struct.pack(">IIII", 2051, len(values), 28, 28))
+                file.write(values.tobytes())
+
+        def write_labels(path: Path, values: np.ndarray) -> None:
+            with path.open("wb") as file:
+                file.write(struct.pack(">II", 2049, len(values)))
+                file.write(values.astype(np.uint8).tobytes())
+
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            write_images(root / "train-images.idx3-ubyte", images)
+            write_labels(root / "train-labels.idx1-ubyte", labels)
+            write_images(root / "t10k-images.idx3-ubyte", test_images)
+            write_labels(root / "t10k-labels.idx1-ubyte", labels[:10000])
+            first = load_mnist(data_dir=root)
+            second = load_mnist(data_dir=root)
 
         self.assertEqual(first.x_train.shape, (50000, 28, 28, 1))
         self.assertEqual(first.x_validation.shape, (10000, 28, 28, 1))

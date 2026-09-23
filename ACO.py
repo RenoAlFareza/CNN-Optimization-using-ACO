@@ -45,6 +45,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--cache", action="store_true")
     parser.add_argument("--synthetic", action="store_true", help="Test ACO without TensorFlow/MNIST.")
+    parser.add_argument(
+        "--data-dir",
+        default="data",
+        help="Directory containing the local MNIST IDX files (default: data).",
+    )
     parser.add_argument("--output-dir", default="experiments")
     parser.add_argument(
         "--analyze",
@@ -93,7 +98,7 @@ def main() -> None:
             from dataset import load_mnist
             from evaluator import evaluate_candidate
 
-            data = load_mnist(2024)
+            data = load_mnist(2024, args.data_dir)
             evaluator_factory = lambda config: (
                 lambda candidate, _experiment: evaluate_candidate(candidate, config, data)
             )
@@ -148,7 +153,7 @@ def main() -> None:
         from dataset import load_mnist
         from evaluator import evaluate_candidate
 
-        data = load_mnist(config.dataset_seed)
+        data = load_mnist(config.dataset_seed, args.data_dir)
         evaluator = lambda candidate, experiment: evaluate_candidate(candidate, experiment, data)
 
     optimizer = ACOOptimizer(config, evaluator)

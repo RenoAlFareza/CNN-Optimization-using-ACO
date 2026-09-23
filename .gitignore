@@ -12,6 +12,7 @@ docs/agents/
 
 # Local experiment outputs and trained models
 experiments/
+data/
 *.keras
 *.h5
 

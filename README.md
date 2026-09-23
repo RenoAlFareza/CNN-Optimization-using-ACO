@@ -12,6 +12,13 @@ optimizer, and (in `improved` mode) learning rate.
 - A CPU works for smoke tests and pilots. A CUDA-capable GPU is recommended
   for the full primary experiment.
 
+Place the four standard MNIST IDX files in `data/`. The loader accepts either
+flat filenames (`train-images.idx3-ubyte`, etc.) or the nested layout from the
+provided notebook (`train-images-idx3-ubyte/train-images-idx3-ubyte`, etc.).
+The dataset is intentionally ignored by Git because it is local input data.
+If the files are stored elsewhere, pass the location with
+`--data-dir PATH_TO_DATA`.
+
 Install dependencies:
 
 ```bash
@@ -39,7 +46,7 @@ Omit `--synthetic` to load and train on MNIST:
 
 ```bash
 python ACO.py --mode improved --budget smoke --seed 42 \
-  --cache --output-dir experiments/real_smoke
+  --data-dir data --cache --output-dir experiments/real_smoke
 ```
 
 The smoke run is only an implementation check, not a scientific result.
